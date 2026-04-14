@@ -1,0 +1,33 @@
+[project]
+name = "akasha"
+version = "0.4.0"
+description = "Akasha — 个人知识库 MCP Server，语义搜索 + LLM Wiki 知识编译"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.25.0",
+    "chromadb>=0.5",
+    "pyyaml>=6.0",
+    "openai>=1.0",
+    "httpx>=0.27",
+    "mkdocs-material>=9.5",
+]
+
+[project.scripts]
+akasha = "akasha.server:main"
+akasha-site = "akasha.site:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["akasha"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# ChromaDB 本地数据
+.akasha/
+
+# mkdocs 构建产物
+site/
+mkdocs.yml
+
+# uv
+uv.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
