@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "vault/**"
       - "akasha/**"
       - ".github/workflows/deploy-site.yml"
   workflow_dispatch:
@@ -30,16 +31,14 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Init vault and build site
-        run: |
-          uv run akasha init
-          uv run akasha-site build
+      - name: Build site
+        run: uv run akasha-site build
         env:
-          AKASHA_VAULT_PATH: ${{ github.workspace }}/test-vault
+          AKASHA_VAULT_PATH: ${{ github.workspace }}/vault
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: test-vault/site
+          path: vault/site
 
   deploy:
     needs: build
