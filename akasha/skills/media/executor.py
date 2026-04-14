@@ -84,6 +84,10 @@ class MediaExecutor:
 
         result = await self._whisper(audio_path, source)
 
+        # 转写失败不生成页面
+        if not result.text or "转写失败" in result.text:
+            return f"转写失败: {source}"
+
         if not title:
             title = Path(source).stem if not source.startswith("http") else "语音转写"
 

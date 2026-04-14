@@ -11,12 +11,39 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from urllib.parse import unquote, urlparse, parse_qs
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# URL 解包 — 从飞书/微信/知乎等安全跳转链接中提取真实 URL
+# ---------------------------------------------------------------------------
+
+_REDIRECT_HOSTS = {
+    "security.feishu.cn",
+    "link.zhihu.com",
+    "weixin110.qq.com",
+}
+
+
+def _unwrap_url(url: str) -> str:
+    """从包装链接中提取真实 URL。"""
+    try:
+        parsed = urlparse(url)
+        if parsed.hostname in _REDIRECT_HOSTS:
+            params = parse_qs(parsed.query)
+            target = params.get("target", [None])[0]
+            if target:
+                return unquote(target)
+    except Exception:
+        pass
+    return url
 
 
 @dataclass
@@ -94,6 +121,7 @@ class VideoExecutor:
 
     async def download(self, url: str, docs_dir: Path | None = None) -> str:
         """下载视频。如果提供 docs_dir 则下载到 docs/assets/video/，否则临时目录。"""
+        url = _unwrap_url(url)
         info = await self.info(url)
         if not info.download_url:
             return f"无法获取下载链接: {url}"
@@ -123,6 +151,7 @@ class VideoExecutor:
 
     async def info(self, url: str) -> VideoInfo:
         """获取视频信息（不下载）。"""
+        url = _unwrap_url(url)
         platform = self._detect_platform(url)
 
         # 级联尝试
@@ -144,18 +173,29 @@ class VideoExecutor:
         return VideoInfo(url=url, platform=platform, title="(无法解析)")
 
     async def to_wiki(self, url: str, docs_dir: Path | None = None) -> str:
-        """解析视频 → 下载 → 生成带嵌入视频的 wiki 页面。返回页面路径。"""
+        """解析视频 → 下载 → 转写语音 → LLM 分析 → 生成知识文档。返回页面路径。"""
+        url = _unwrap_url(url)
         info = await self.info(url)
+
+        if info.title == "(无法解析)":
+            return f"无法解析视频信息: {url}"
 
         safe_title = (
             re.sub(r"[^\w\-]", "-", info.title.lower())[:60].strip("-") or "video"
         )
         video_filename = f"{safe_title}.mp4"
         wiki_filename = f"{safe_title}.md"
-        rel_path = f"wiki/entities/{wiki_filename}"
+        rel_path = f"wiki/articles/{wiki_filename}"
 
-        # 下载视频到 docs/assets/video/
+        # 检查是否已存在同名页面（避免重复生成）
+        if docs_dir:
+            existing = docs_dir / rel_path
+            if existing.exists():
+                return f"已存在: {rel_path}（跳过重复生成）"
+
+        # Step 1: 下载视频
         video_downloaded = False
+        video_path: Path | None = None
         if docs_dir and info.download_url:
             video_dir = docs_dir / "assets" / "video"
             video_dir.mkdir(parents=True, exist_ok=True)
@@ -169,11 +209,23 @@ class VideoExecutor:
                             f.write(chunk)
                 video_downloaded = True
             except Exception:
-                pass  # 下载失败不阻塞 wiki 生成
+                video_path = None
 
-        # 生成 wiki 页面内容
+        # Step 2: 转写语音（从下载的视频提取音频 → whisper）
+        transcript = ""
+        if video_downloaded and video_path:
+            transcript = await self._transcribe_video(video_path)
+            # 转写失败的内容不算有效转写
+            if "转写失败" in transcript:
+                transcript = ""
+
+        # Step 3: LLM 分析内容，生成结构化知识文档
+        llm_analysis = ""
+        if transcript:
+            llm_analysis = await self._analyze_content(info, transcript)
+
+        # Step 4: 生成 wiki 页面
         today = date.today().isoformat()
-        tags_str = ", ".join(info.tags[:5]) if info.tags else info.platform
         content = (
             f"---\n"
             f'title: "{info.title}"\n'
@@ -181,17 +233,19 @@ class VideoExecutor:
             f'source: "{info.url}"\n'
             f"created: {today}\n"
             f"updated: {today}\n"
-            f"status: seedling\n"
+            f"status: {'developing' if llm_analysis else 'seedling'}\n"
             f"---\n\n"
             f"# {info.title}\n\n"
         )
 
-        # 嵌入视频：优先本地文件，fallback 到源链接
+        # 嵌入视频（用站点根路径，兼容 mkdocs 构建后的 URL 结构）
         if video_downloaded:
-            # 用绝对路径（相对于 docs 根目录），mkdocs 会正确处理
+            from urllib.parse import quote
+
+            encoded_filename = quote(video_filename)
             content += (
                 f'<video controls width="100%">\n'
-                f'  <source src="/assets/video/{video_filename}" type="video/mp4">\n'
+                f'  <source src="/assets/video/{encoded_filename}" type="video/mp4">\n'
                 f"  你的浏览器不支持视频播放。\n"
                 f"</video>\n\n"
             )
@@ -203,9 +257,9 @@ class VideoExecutor:
                 f"</video>\n\n"
             )
 
-        # 源链接（始终保留）
         content += f"> 源链接: [{info.url}]({info.url})\n\n"
 
+        # 元信息
         content += f"- **作者**: {info.author}\n- **平台**: {info.platform}\n"
         if info.duration:
             content += f"- **时长**: {info.duration_str()}\n"
@@ -213,8 +267,19 @@ class VideoExecutor:
             content += f"- **发布日期**: {info.publish_date}\n"
         if info.view_count:
             content += f"- **播放量**: {info.view_count:,}\n"
-        content += f"\n## 摘要\n\n{info.description or '(无描述)'}\n"
+        content += "\n"
+
+        # LLM 分析结果（核心内容）
+        if llm_analysis:
+            content += llm_analysis + "\n"
+        else:
+            # fallback: 没有 LLM 分析时，至少放转写文本
+            content += f"## 摘要\n\n{info.description or '(无描述)'}\n"
+            if transcript:
+                content += f"\n## 完整文字稿\n\n{transcript}\n"
+
         if info.tags:
+            tags_str = ", ".join(info.tags[:10])
             content += f"\n## 标签\n\n{tags_str}\n"
 
         # 写入文件
@@ -224,6 +289,85 @@ class VideoExecutor:
             filepath.write_text(content, encoding="utf-8")
 
         return rel_path
+
+    async def _transcribe_video(self, video_path: Path) -> str:
+        """从视频中提取音频并转写为文字。"""
+        try:
+            from ..media.executor import MediaExecutor
+
+            media = MediaExecutor()
+            result = await media.transcribe(str(video_path))
+            # transcribe 返回格式: "转写完成: ... | ...\n\n---\n\n实际文字"
+            if "---" in result:
+                return result.split("---", 1)[1].strip()
+            return result
+        except Exception as e:
+            print(f"[video] 转写失败: {e}", file=sys.stderr)
+            return ""
+
+    async def _analyze_content(self, info: VideoInfo, transcript: str) -> str:
+        """用 LLM 分析转写内容，生成结构化知识文档。"""
+        import os
+
+        api_key = os.getenv("AKASHA_LLM_API_KEY", "")
+        if not api_key:
+            return ""
+
+        try:
+            from openai import AsyncOpenAI
+
+            base_url = os.getenv("AKASHA_LLM_BASE_URL", "https://api.openai.com/v1")
+            model = os.getenv("AKASHA_LLM_MODEL", "gpt-4o")
+
+            client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=120.0,
+                max_retries=2,
+            )
+
+            system_prompt = (
+                "你是一个知识库管理助手。用户给你一段视频的转写文字稿，"
+                "你需要将其整理为结构化的知识文档。\n\n"
+                "## 输出规则\n"
+                "1. 直接输出 Markdown 内容，不要输出 frontmatter\n"
+                "2. 用 ## 开头的章节组织内容\n"
+                "3. 必须包含以下章节：\n"
+                "   - ## 内容概述（1-3 句话总结视频核心内容）\n"
+                "   - ## 关键知识点（用编号列表，提取所有重要知识点）\n"
+                "   - ## 详细笔记（按视频逻辑分段整理，保留关键细节和步骤）\n"
+                "   - ## 相关概念（列出提到的重要概念/工具/技术，用 [[双链]] 格式）\n"
+                "4. 如果是教程类视频，详细笔记中要保留操作步骤\n"
+                "5. 如果有代码或命令，用代码块格式保留\n"
+                "6. 最后附上 ## 完整文字稿（折叠块）\n"
+                "7. 内容要详尽，不要遗漏重要信息\n"
+                "8. 用中文输出"
+            )
+
+            user_msg = (
+                f"## 视频信息\n"
+                f"- 标题: {info.title}\n"
+                f"- 作者: {info.author}\n"
+                f"- 平台: {info.platform}\n"
+                f"- 时长: {info.duration_str()}\n\n"
+                f"## 转写文字稿\n\n{transcript[:30000]}\n\n"
+                f"请整理为结构化的知识文档。"
+            )
+
+            resp = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ],
+                max_tokens=8192,
+                temperature=0.3,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as e:
+            print(f"[video] LLM 分析失败: {e}", file=sys.stderr)
+            # fallback: 至少返回转写内容
+            return f"## 完整文字稿\n\n{transcript}"
 
     # ── 后端实现 ──
 

@@ -1,7 +1,7 @@
 [project]
 name = "akasha"
-version = "0.4.0"
-description = "Akasha — 个人知识库 MCP Server，语义搜索 + LLM Wiki 知识编译"
+version = "1.0.0"
+description = "Akasha — 个人 AI 知识库引擎，语义搜索 + LLM Wiki 知识编译 + Agent"
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.25.0",
@@ -10,11 +10,13 @@ dependencies = [
     "openai>=1.0",
     "httpx>=0.27",
     "mkdocs-material>=9.5",
+    "lark-oapi>=1.3",
+    "uvicorn>=0.30",
+    "starlette>=0.38",
 ]
 
 [project.scripts]
-akasha = "akasha.server:main"
-akasha-site = "akasha.site:main"
+akasha = "akasha.serve.mcp:main"
 
 [build-system]
 requires = ["hatchling"]

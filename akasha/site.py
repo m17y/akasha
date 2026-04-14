@@ -88,13 +88,24 @@ def _generate_mkdocs_config(cfg) -> dict:
         "markdown_extensions": [
             "admonition",
             "attr_list",
+            "md_in_html",
             "def_list",
             "footnotes",
             "tables",
             {"toc": {"permalink": True}},
             {"pymdownx.highlight": {"linenums": True}},
             "pymdownx.inlinehilite",
-            "pymdownx.superfences",
+            {
+                "pymdownx.superfences": {
+                    "custom_fences": [
+                        {
+                            "name": "mermaid",
+                            "class": "mermaid",
+                            "format": "!!python/name:pymdownx.superfences.fence_code_format",
+                        }
+                    ]
+                }
+            },
             {"pymdownx.tabbed": {"alternate_style": True}},
             {"pymdownx.tasklist": {"custom_checkbox": True}},
             "pymdownx.details",
@@ -113,15 +124,26 @@ def _build_nav(docs_dir: Path) -> list:
     nav = []
 
     if (docs_dir / "index.md").exists():
-        nav.append({"目录": "index.md"})
+        nav.append({"首页": "index.md"})
+
+    # wiki 子目录各自作为顶级导航项
+    wiki_dir = docs_dir / "wiki"
+    if wiki_dir.exists():
+        for cat_name, cat_label in _NAV_CATEGORIES.items():
+            cat_dir = wiki_dir / cat_name
+            if not cat_dir.exists():
+                continue
+            items = []
+            for md in sorted(cat_dir.rglob("*.md")):
+                rel = str(md.relative_to(docs_dir))
+                name = _extract_title(md)
+                items.append({name: rel})
+            if items:
+                nav.append({cat_label: items})
 
     raw_section = _scan_section(docs_dir, "raw", "原始素材")
     if raw_section:
         nav.append(raw_section)
-
-    wiki_section = _scan_section(docs_dir, "wiki", "Wiki")
-    if wiki_section:
-        nav.append(wiki_section)
 
     if (docs_dir / "schema.md").exists():
         nav.append({"Schema": "schema.md"})
@@ -132,15 +154,20 @@ def _build_nav(docs_dir: Path) -> list:
     return nav
 
 
-# 子目录中文别名
-_DIR_LABELS = {
-    "analysis": "分析文档",
-    "notes": "笔记",
+# wiki 子目录 → 导航栏显示（顺序决定导航栏顺序）
+_NAV_CATEGORIES = {
     "articles": "文章",
     "concepts": "概念",
     "entities": "实体",
-    "comparisons": "对比",
     "synthesis": "综合",
+    "comparisons": "对比",
+}
+
+# raw 子目录中文别名
+_RAW_DIR_LABELS = {
+    "analysis": "分析文档",
+    "notes": "笔记",
+    "articles": "文章",
 }
 
 
@@ -188,7 +215,9 @@ def _scan_section(docs_dir: Path, subdir: str, label: str) -> dict | None:
                 name = _extract_title(md)
                 sub_items.append({name: rel})
             if sub_items:
-                dir_label = _DIR_LABELS.get(child.name, child.name)
+                dir_label = _RAW_DIR_LABELS.get(
+                    child.name, _NAV_CATEGORIES.get(child.name, child.name)
+                )
                 items.append({dir_label: sub_items})
         elif child.suffix == ".md":
             rel = str(child.relative_to(docs_dir))

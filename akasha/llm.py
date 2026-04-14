@@ -40,7 +40,7 @@ class LLMClient:
         self,
         system: str,
         user: str,
-        temperature: float = 0.3,
+        temperature: float | None = None,
         max_tokens: int = 4096,
     ) -> str:
         """单轮对话，返回文本结果。
@@ -48,21 +48,24 @@ class LLMClient:
         Args:
             system: 系统提示词
             user: 用户消息
-            temperature: 生成温度（低 = 更确定性）
+            temperature: 生成温度（None = 不传，兼容不支持的模型）
             max_tokens: 最大输出 token 数
 
         Returns:
             LLM 生成的文本
         """
-        resp = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
+        kwargs: dict = {
+            "model": self._model,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
+        resp = await self._client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
 
     async def chat_with_context(
@@ -70,7 +73,7 @@ class LLMClient:
         system: str,
         context: str,
         user: str,
-        temperature: float = 0.3,
+        temperature: float | None = None,
         max_tokens: int = 4096,
     ) -> str:
         """带上下文的对话（system + context + user 三段）。
@@ -83,15 +86,18 @@ class LLMClient:
         Returns:
             LLM 生成的文本
         """
-        resp = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
+        kwargs: dict = {
+            "model": self._model,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": f"以下是相关上下文:\n\n{context}"},
                 {"role": "assistant", "content": "已理解上下文，请告诉我你需要什么。"},
                 {"role": "user", "content": user},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
+        resp = await self._client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""

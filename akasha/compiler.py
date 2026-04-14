@@ -1,10 +1,13 @@
 """
-知识摄入器 — Karpathy LLM Wiki 核心。
+知识编译器 — Karpathy LLM Wiki 核心。
 
 不只是索引，而是编译知识:
 - ingest: 读原始源 → LLM 提取概念/实体 → 创建/更新 wiki 页面
 - save_as_page: 好回答存为 wiki 页
 - lint: wiki 健康检查
+
+依赖 FileStore 做文件操作（不直接碰文件系统），
+依赖 LLMClient 做 LLM 调用。
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pathlib import Path
 
 from .config import Config
 from .llm import LLMClient
+from .storage.files import FileStore
 
 
 # ---------------------------------------------------------------------------
@@ -120,31 +124,28 @@ SAVE_PAGE_PROMPT = """\
 
 
 # ---------------------------------------------------------------------------
-# Ingester
+# Compiler
 # ---------------------------------------------------------------------------
 
 
-class Ingester:
-    """知识摄入器。"""
+class Compiler:
+    """知识编译器。"""
 
-    def __init__(self, config: Config, llm: LLMClient):
+    def __init__(self, config: Config, files: FileStore, llm: LLMClient):
         self.config = config
+        self.files = files
         self.llm = llm
 
     async def ingest(self, source_path: str) -> IngestResult:
         """摄入单个源文件 → 提取知识 → 创建/更新 wiki 页面。
 
         Args:
-            source_path: 相对于 vault 的路径（如 raw/analysis/autoagent-analysis.md）
+            source_path: 相对于 docs 的路径（如 raw/analysis/xxx.md）
 
         Returns:
             IngestResult
         """
-        full_path = self.config.docs_dir / source_path
-        if not full_path.exists():
-            raise FileNotFoundError(f"源文件不存在: {source_path}")
-
-        content = full_path.read_text(encoding="utf-8")
+        content = self.files.read_raw(source_path)
         result = IngestResult(source_file=source_path)
 
         # 读取 schema 规则
@@ -152,8 +153,8 @@ class Ingester:
         if self.config.schema_path.exists():
             schema = self.config.schema_path.read_text(encoding="utf-8")
 
-        # 收集已有 wiki 页面信息（供 LLM 判断是创建还是合并）
-        existing_pages = self._list_wiki_pages()
+        # 已有 wiki 页面
+        existing_pages = self.files.list_wiki_pages()
         existing_info = (
             "\n".join(f"- {p}" for p in existing_pages)
             if existing_pages
@@ -176,7 +177,6 @@ class Ingester:
             max_tokens=8192,
         )
 
-        # 解析 JSON 响应
         parsed = self._parse_json_response(raw_response)
         if not parsed:
             return result
@@ -190,24 +190,23 @@ class Ingester:
             if not page_path or not page_content:
                 continue
 
-            # L4 安全: 校验写入路径
-            if not self._validate_write_path(page_path):
+            # 安全校验（write_wiki 内部会做）
+            if not page_path.startswith("wiki/") or ".." in page_path:
                 continue
 
             full_page_path = self.config.docs_dir / page_path
 
             if full_page_path.exists():
                 # 合并到已有页面
-                existing_content = full_page_path.read_text(encoding="utf-8")
+                existing_content = self.files.read_raw(page_path)
                 merged = await self._merge_page(
                     existing_content, page_content, source_path
                 )
-                full_page_path.write_text(merged, encoding="utf-8")
+                self.files.write_wiki(page_path, merged)
                 result.pages_updated.append(page_path)
             else:
                 # 创建新页面
-                full_page_path.parent.mkdir(parents=True, exist_ok=True)
-                full_page_path.write_text(page_content, encoding="utf-8")
+                self.files.write_wiki(page_path, page_content)
                 result.pages_created.append(page_path)
 
         # Step 3: 更新 index.md 和 log.md
@@ -232,18 +231,14 @@ class Ingester:
         Returns:
             创建的页面路径
         """
-        # L4 安全: 校验 category
         valid_categories = {"concepts", "entities", "comparisons", "synthesis"}
         if category not in valid_categories:
             raise ValueError(f"无效分类: {category}")
 
-        # 生成文件名
         filename = re.sub(r"[^\w\s-]", "", title.lower())
         filename = re.sub(r"[\s]+", "-", filename).strip("-")
         page_path = f"wiki/{category}/{filename}.md"
-        full_path = self.config.docs_dir / page_path
 
-        # LLM 整理为 wiki 格式
         user_msg = (
             f"## 标题\n{title}\n\n"
             f"## 分类\n{category}\n\n"
@@ -258,10 +253,8 @@ class Ingester:
             max_tokens=4096,
         )
 
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(formatted, encoding="utf-8")
+        self.files.write_wiki(page_path, formatted)
 
-        # 更新 index 和 log
         result = IngestResult(
             source_file="(对话生成)",
             pages_created=[page_path],
@@ -273,25 +266,17 @@ class Ingester:
         return page_path
 
     def lint(self) -> list[LintIssue]:
-        """Wiki 健康检查（不需要 LLM，纯规则检查）。
-
-        检查:
-        - 缺失 frontmatter
-        - 孤立页面（没有被其他页面引用）
-        - 链接过少（< 2 个 related）
-        - 空页面
-        """
+        """Wiki 健康检查（不需要 LLM，纯规则检查）。"""
         issues: list[LintIssue] = []
-        wiki_dir = self.config.wiki_dir
-        if not wiki_dir.exists():
+        wiki_pages = self.files.list_wiki_pages()
+        if not wiki_pages:
             return issues
 
-        all_pages: dict[str, str] = {}  # {相对路径: 内容}
-        for md in wiki_dir.rglob("*.md"):
-            rel = str(md.relative_to(self.config.docs_dir))
+        all_pages: dict[str, str] = {}
+        for page_path in wiki_pages:
             try:
-                all_pages[rel] = md.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+                all_pages[page_path] = self.files.read_raw(page_path)
+            except (FileNotFoundError, ValueError):
                 continue
 
         if not all_pages:
@@ -306,7 +291,7 @@ class Ingester:
         for page_path, content in all_pages.items():
             page_name = Path(page_path).stem
 
-            # 检查: 空页面
+            # 空页面
             if len(content.strip()) < 50:
                 issues.append(
                     LintIssue(
@@ -318,7 +303,7 @@ class Ingester:
                 )
                 continue
 
-            # 检查: 缺失 frontmatter
+            # 缺失 frontmatter
             if not content.strip().startswith("---"):
                 issues.append(
                     LintIssue(
@@ -329,7 +314,7 @@ class Ingester:
                     )
                 )
 
-            # 检查: 孤立页面（没有其他页面通过 [[]] 引用它）
+            # 孤立页面
             if page_name not in all_links:
                 issues.append(
                     LintIssue(
@@ -340,7 +325,7 @@ class Ingester:
                     )
                 )
 
-            # 检查: [[]] 引用过少
+            # 引用过少
             own_links = re.findall(r"\[\[([^\]]+)\]\]", content)
             if len(own_links) < 2:
                 issues.append(
@@ -356,40 +341,12 @@ class Ingester:
 
     # ── 内部方法 ──
 
-    def _validate_write_path(self, page_path: str) -> bool:
-        """L4 安全: 校验写入路径。
-
-        规则:
-        - 必须以 wiki/ 开头（不允许写 raw/、schema.md、index.md 等）
-        - 不允许包含 .. 路径穿越
-        - resolve 后必须在 wiki_dir 内
-        """
-        from .events import emit, SECURITY_BLOCKED
-
-        if ".." in page_path:
-            emit(SECURITY_BLOCKED, reason="path_traversal", path=page_path)
-            return False
-
-        if not page_path.startswith("wiki/"):
-            emit(SECURITY_BLOCKED, reason="write_outside_wiki", path=page_path)
-            return False
-
-        # resolve 验证
-        full_path = (self.config.docs_dir / page_path).resolve()
-        wiki_dir = self.config.wiki_dir.resolve()
-        if not str(full_path).startswith(str(wiki_dir) + "/") and full_path != wiki_dir:
-            emit(SECURITY_BLOCKED, reason="path_escape", path=page_path)
-            return False
-
-        return True
-
     async def _merge_page(
         self,
         existing_content: str,
         new_content: str,
         source_path: str,
     ) -> str:
-        """合并新信息到已有页面。"""
         user_msg = (
             f"## 已有页面内容\n```\n{existing_content[:8000]}\n```\n\n"
             f"## 新信息（来自 {source_path}）\n```\n{new_content[:8000]}\n```\n\n"
@@ -402,63 +359,140 @@ class Ingester:
             max_tokens=8192,
         )
 
-    def _list_wiki_pages(self) -> list[str]:
-        """列出所有已有 wiki 页面。"""
-        wiki_dir = self.config.wiki_dir
-        if not wiki_dir.exists():
-            return []
-        pages = []
-        for md in wiki_dir.rglob("*.md"):
-            pages.append(str(md.relative_to(self.config.docs_dir)))
-        return sorted(pages)
-
     def _update_index(self, result: IngestResult) -> None:
-        """更新 index.md — 追加新创建的页面条目。"""
-        index_path = self.config.index_path
-        if not index_path.exists():
-            return
+        """根据 wiki/ 目录实际内容重新生成 index.md。"""
+        self.rebuild_index()
 
-        content = index_path.read_text(encoding="utf-8")
+    def rebuild_index(self) -> None:
+        """全量扫描 wiki/ 目录，重新生成首页。"""
+        wiki_dir = self.config.wiki_dir
 
-        for page_path in result.pages_created:
-            # 解析分类和标题
-            parts = page_path.split("/")
-            if len(parts) >= 3:
-                category = parts[1]  # concepts / entities / ...
-                page_name = Path(parts[-1]).stem
-                title = page_name.replace("-", " ").title()
+        categories = [
+            ("articles", "文章", []),
+            ("concepts", "概念", []),
+            ("entities", "实体", []),
+            ("synthesis", "综合", []),
+            ("comparisons", "对比", []),
+        ]
 
-                # 找到对应分类的锚点，追加条目
-                section_map = {
-                    "concepts": "## 概念 (concepts/)",
-                    "entities": "## 实体 (entities/)",
-                    "comparisons": "## 对比 (comparisons/)",
-                    "synthesis": "## 综合 (synthesis/)",
-                }
-                section_header = section_map.get(category)
-                if section_header and section_header in content:
-                    # 去掉"暂无条目"占位符
-                    placeholder = f"{section_header}\n\n*暂无条目"
-                    if placeholder in content:
-                        content = content.replace(
-                            placeholder,
-                            f"{section_header}\n\n- [[{page_name}]] — {title}",
-                        )
-                    else:
-                        # 在该分类末尾追加
-                        content = content.replace(
-                            section_header,
-                            f"{section_header}\n- [[{page_name}]] — {title}",
-                        )
+        all_pages = []
 
-        index_path.write_text(content, encoding="utf-8")
+        for cat_dir_name, cat_label, items in categories:
+            cat_dir = wiki_dir / cat_dir_name
+            if not cat_dir.exists():
+                continue
+            for md_file in sorted(cat_dir.glob("*.md")):
+                title = self._extract_title_from_file(md_file)
+                rel_path = f"wiki/{cat_dir_name}/{md_file.name}"
+                mtime = md_file.stat().st_mtime
+                items.append((title, rel_path, mtime))
+                all_pages.append((title, rel_path, mtime, cat_label))
+
+        total_pages = len(all_pages)
+        recent = sorted(all_pages, key=lambda x: x[2], reverse=True)[:8]
+
+        # 构建饼图数据
+        pie_items = []
+        for _, cat_label, items in categories:
+            if items:
+                pie_items.append(f'    "{cat_label}" : {len(items)}')
+
+        lines = [
+            "---",
+            "hide:",
+            "  - navigation",
+            "---",
+            "",
+            "# Akasha 知识库",
+            "",
+            "Akasha 是一个**个人 AI 知识库引擎**。",
+            "通过飞书、MCP 或命令行发送视频链接、网页、文档，",
+            "Akasha 会自动下载、转写、分析，",
+            "用 LLM 提取关键知识并整理成结构化文档。",
+            "",
+            "本站点由 Akasha 基于知识库内容自动生成，使用 MkDocs Material 渲染。",
+            "",
+            "---",
+            "",
+            f"## 知识库概览 · 共 {total_pages} 篇",
+            "",
+            "```mermaid",
+            "pie showData",
+            "    title 内容分布",
+        ]
+        lines.extend(pie_items)
+        lines.append("```")
+        lines.append("")
+
+        # 分类统计表格
+        lines.append("| 分类 | 数量 | 说明 |")
+        lines.append("|:-----|:----:|:-----|")
+        cat_desc = {
+            "文章": "视频、网页等外部内容生成的知识文档",
+            "概念": "从文章中提取的概念词条",
+            "实体": "具体的项目、人物、工具等实体记录",
+            "综合": "Agent 对话中产生的总结和指南",
+            "对比": "不同方案/工具的对比分析",
+        }
+        for _, cat_label, items in categories:
+            count = len(items)
+            desc = cat_desc.get(cat_label, "")
+            lines.append(f"| **{cat_label}** | {count} | {desc} |")
+        lines.append("")
+
+        # 最近更新
+        if recent:
+            lines.append("## 最近更新")
+            lines.append("")
+            lines.append("| 标题 | 分类 | 日期 |")
+            lines.append("|:-----|:----:|:----:|")
+            for title, rel_path, mtime, cat_label in recent:
+                from datetime import datetime
+
+                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+                display_title = title if len(title) <= 35 else title[:32] + "..."
+                lines.append(
+                    f"| [{display_title}]({rel_path}) | {cat_label} | {date_str} |"
+                )
+            lines.append("")
+
+        # 页脚
+        lines.append("---")
+        lines.append(
+            "<small>"
+            "由 [Akasha](https://github.com/m17y/akasha) 自动生成 · "
+            "语义搜索 + LLM 知识编译 + Agent"
+            "</small>"
+        )
+
+        self.config.index_path.write_text("\n".join(lines), encoding="utf-8")
+
+    @staticmethod
+    def _extract_title_from_file(md_path: Path) -> str:
+        """从 Markdown 文件提取标题。"""
+        try:
+            text = md_path.read_text(encoding="utf-8")
+            # frontmatter title
+            if text.startswith("---"):
+                parts = text.split("---", 2)
+                if len(parts) >= 3:
+                    for line in parts[1].strip().split("\n"):
+                        line = line.strip()
+                        if line.startswith("title:"):
+                            title = line[6:].strip().strip('"').strip("'")
+                            if title:
+                                return title
+            # 第一个 # 标题
+            for line in text.split("\n")[:20]:
+                line = line.strip()
+                if line.startswith("# ") and not line.startswith("##"):
+                    return line[2:].strip()
+        except (UnicodeDecodeError, OSError):
+            pass
+        return md_path.stem.replace("-", " ").title()
 
     def _append_log(self, result: IngestResult) -> None:
         """追加 log.md。"""
-        log_path = self.config.log_path
-        if not log_path.exists():
-            return
-
         today = date.today().isoformat()
         lines = [f"\n## {today}"]
 
@@ -472,20 +506,16 @@ class Ingester:
             if result.concepts_extracted:
                 lines.append(f"  - 提取概念: {', '.join(result.concepts_extracted)}")
 
-        content = log_path.read_text(encoding="utf-8")
-        content += "\n".join(lines) + "\n"
-        log_path.write_text(content, encoding="utf-8")
+        self.files.append_file("log.md", "\n".join(lines) + "\n")
 
     @staticmethod
     def _parse_json_response(text: str) -> dict | None:
-        """从 LLM 响应中解析 JSON（容忍 markdown code block 包裹）。"""
-        # 尝试直接解析
+        """从 LLM 响应中解析 JSON。"""
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # 尝试从 ```json ... ``` 中提取
         m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         if m:
             try:
@@ -493,7 +523,6 @@ class Ingester:
             except json.JSONDecodeError:
                 pass
 
-        # 尝试找到第一个 { 和最后一个 }
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:

@@ -12,9 +12,34 @@ from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote, parse_qs
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# URL 解包
+# ---------------------------------------------------------------------------
+
+_REDIRECT_HOSTS = {
+    "security.feishu.cn",
+    "link.zhihu.com",
+    "weixin110.qq.com",
+}
+
+
+def _unwrap_url(url: str) -> str:
+    """从飞书/微信/知乎安全跳转链接中提取真实 URL。"""
+    try:
+        parsed = urlparse(url)
+        if parsed.hostname in _REDIRECT_HOSTS:
+            params = parse_qs(parsed.query)
+            target = params.get("target", [None])[0]
+            if target:
+                return unquote(target)
+    except Exception:
+        pass
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +254,7 @@ class WebClipExecutor:
 
     async def read(self, url: str) -> str:
         """提取网页正文，返回 Markdown。不保存。"""
+        url = _unwrap_url(url)
         page = await self._fetch_and_extract(url)
         return page.to_summary() + "\n\n---\n\n" + page.content
 
@@ -236,6 +262,7 @@ class WebClipExecutor:
         self, url: str, docs_dir: Path | None = None, category: str = "articles"
     ) -> str:
         """提取网页正文并保存为 wiki 页面。返回页面路径。"""
+        url = _unwrap_url(url)
         page = await self._fetch_and_extract(url)
 
         today = date.today().isoformat()

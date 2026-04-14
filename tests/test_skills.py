@@ -11,9 +11,9 @@ import pytest
 
 from akasha.skills import (
     SkillDef,
-    discover_skills,
-    load_executor,
-    _parse_skill_frontmatter,
+    _discover_skills as discover_skills,
+    _load_executor as load_executor,
+    _parse_frontmatter as _parse_skill_frontmatter,
 )
 from akasha.skills.video.executor import VideoExecutor, VideoInfo, get_executor
 

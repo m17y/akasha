@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from akasha.skills.media.executor import MediaExecutor, TranscribeResult, get_executor
-from akasha.skills import discover_skills
+from akasha.skills import _discover_skills as discover_skills
 
 
 # ============================================================================

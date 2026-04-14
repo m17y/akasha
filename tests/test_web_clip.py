@@ -13,7 +13,7 @@ from akasha.skills.web_clip.executor import (
     extract_page,
     get_executor,
 )
-from akasha.skills import discover_skills
+from akasha.skills import _discover_skills as discover_skills
 
 
 # ============================================================================
