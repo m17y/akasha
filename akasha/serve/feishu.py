@@ -105,7 +105,7 @@ class FeishuHandlers:
     def __init__(self, vault: Vault):
         self.vault = vault
 
-    def dispatch(self, text: str) -> str:
+    def dispatch(self, text: str, user_id: str = "") -> str:
         """路由消息到对应 handler。"""
         text = text.strip()
 
@@ -132,15 +132,15 @@ class FeishuHandlers:
         # 非命令消息：有 LLM 走 Agent，否则当搜索
         if len(text) > 2:
             if self.vault.config.llm_configured:
-                return self.ask(text)
+                return self.ask(text, user_id=user_id)
             return self.search(text)
 
         return self.help()
 
-    def ask(self, message: str) -> str:
+    def ask(self, message: str, user_id: str = "") -> str:
         """Agent 模式 — 自然语言交互。"""
         try:
-            return _run_async(self.vault.ask(message))
+            return _run_async(self.vault.ask(message, user_id=user_id))
         except Exception as e:
             import traceback
 
@@ -313,7 +313,9 @@ def _is_duplicate(message_id: str) -> bool:
     return False
 
 
-def _handle_message(message_id: str, chat_type: str, text: str) -> None:
+def _handle_message(
+    message_id: str, chat_type: str, text: str, user_id: str = ""
+) -> None:
     """在后台线程中处理消息（耗时操作不阻塞 WsClient 回调）。"""
     # 先加表情表示收到了
     _add_reaction(message_id, "OnIt")
@@ -321,7 +323,7 @@ def _handle_message(message_id: str, chat_type: str, text: str) -> None:
     # 路由到 handler
     handlers = _get_handlers()
     try:
-        reply = handlers.dispatch(text)
+        reply = handlers.dispatch(text, user_id=user_id)
     except Exception as e:
         reply = f"处理失败: {e}"
 
@@ -365,15 +367,21 @@ def _on_message_receive(data: P2ImMessageReceiveV1) -> None:
         if not text:
             return
 
+    # 提取发送者 ID（用于会话记忆）
+    sender = data.event.sender
+    user_id = ""
+    if sender and hasattr(sender, "sender_id") and sender.sender_id:
+        user_id = getattr(sender.sender_id, "open_id", "") or ""
+
     print(
-        f"[feishu] 收到消息: chat={chat_type} msg_id={message_id} text={text!r}",
+        f"[feishu] 收到消息: chat={chat_type} msg_id={message_id} user={user_id[:10]} text={text!r}",
         flush=True,
     )
 
     # 在后台线程处理，不阻塞 WsClient 回调
     thread = threading.Thread(
         target=_handle_message,
-        args=(message_id, chat_type, text),
+        args=(message_id, chat_type, text, user_id),
         daemon=True,
     )
     thread.start()

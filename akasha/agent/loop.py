@@ -114,11 +114,12 @@ class AgentLoop:
 
         return "\n".join(parts)
 
-    async def run(self, user_input: str) -> str:
+    async def run(self, user_input: str, user_id: str = "") -> str:
         """执行一轮对话。
 
         Args:
             user_input: 用户输入
+            user_id: 用户标识（用于加载历史对话上下文）
 
         Returns:
             Agent 最终回复
@@ -126,8 +127,18 @@ class AgentLoop:
         self.steps = []
         messages: list[AgentMessage] = [
             AgentMessage(role="system", content=self._system_prompt),
-            AgentMessage(role="user", content=user_input),
         ]
+
+        # 注入历史对话上下文
+        if user_id:
+            from .memory import SessionManager
+
+            self._session_mgr = getattr(self, "_session_mgr", None) or SessionManager()
+            history = self._session_mgr.get(user_id).to_messages(limit=6)
+            for msg in history:
+                messages.append(AgentMessage(role=msg["role"], content=msg["content"]))
+
+        messages.append(AgentMessage(role="user", content=user_input))
 
         for step_num in range(MAX_STEPS):
             # Think: LLM 决定下一步
@@ -141,6 +152,9 @@ class AgentLoop:
                 # 最终回复 — 任务完成
                 step = AgentStep(thought=response_text)
                 self.steps.append(step)
+                # 记录会话历史
+                if user_id and hasattr(self, "_session_mgr"):
+                    self._session_mgr.record(user_id, user_input, response_text)
                 return response_text
 
             action_name, params = action_call

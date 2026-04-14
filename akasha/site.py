@@ -15,6 +15,7 @@ mkdocs-material 站点生成器。
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -141,6 +142,10 @@ def _build_nav(docs_dir: Path) -> list:
             if items:
                 nav.append({cat_label: items})
 
+    # 知识图谱
+    if (docs_dir / "wiki" / "graph.md").exists():
+        nav.append({"图谱": "wiki/graph.md"})
+
     raw_section = _scan_section(docs_dir, "raw", "原始素材")
     if raw_section:
         nav.append(raw_section)
@@ -230,6 +235,171 @@ def _scan_section(docs_dir: Path, subdir: str, label: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# [[双链]] 渲染
+# ---------------------------------------------------------------------------
+
+
+def _build_wikilink_map(docs_dir: Path) -> dict[str, str]:
+    """扫描 wiki/ 下所有页面，建立 标题/文件名 → 相对路径 的映射。"""
+    link_map: dict[str, str] = {}
+    wiki_dir = docs_dir / "wiki"
+    if not wiki_dir.exists():
+        return link_map
+
+    for md_file in wiki_dir.rglob("*.md"):
+        rel_path = str(md_file.relative_to(docs_dir))
+        # 文件名（不含扩展名）作为 key
+        stem = md_file.stem
+        link_map[stem] = rel_path
+        link_map[stem.lower()] = rel_path
+        # frontmatter title 也作为 key
+        title = _extract_title(md_file)
+        if title and title != stem:
+            link_map[title] = rel_path
+            link_map[title.lower()] = rel_path
+
+    return link_map
+
+
+def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
+    """把 docs/ 下所有 md 文件中的 [[xxx]] 替换为 [xxx](实际路径)。"""
+    import re
+
+    total_replaced = 0
+    wiki_dir = docs_dir / "wiki"
+    if not wiki_dir.exists():
+        return 0
+
+    for md_file in wiki_dir.rglob("*.md"):
+        text = md_file.read_text(encoding="utf-8")
+        file_dir = md_file.parent
+
+        def _replace(m):
+            nonlocal total_replaced
+            name = m.group(1).strip()
+            # 查找映射
+            target = link_map.get(name) or link_map.get(name.lower())
+            if target:
+                # 计算从当前文件到目标的相对路径
+                target_path = docs_dir / target
+                try:
+                    rel = os.path.relpath(target_path, file_dir)
+                except ValueError:
+                    rel = target
+                total_replaced += 1
+                return f"[{name}]({rel})"
+            # 找不到目标，保留原样但标记为待创建
+            return f"**{name}**"
+
+        new_text = re.sub(r"\[\[([^\]]+)\]\]", _replace, text)
+        if new_text != text:
+            md_file.write_text(new_text, encoding="utf-8")
+
+    return total_replaced
+
+
+# ---------------------------------------------------------------------------
+# 知识图谱
+# ---------------------------------------------------------------------------
+
+
+def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
+    """扫描所有 wiki 页面的 related/tags，生成 mermaid 关联图谱页面。"""
+    import re
+
+    wiki_dir = docs_dir / "wiki"
+    if not wiki_dir.exists():
+        return False
+
+    # 收集节点和边
+    nodes: dict[str, str] = {}  # id → display_name
+    edges: list[tuple[str, str]] = []
+
+    for md_file in wiki_dir.rglob("*.md"):
+        if md_file.name == "graph.md":
+            continue
+        title = _extract_title(md_file)
+        node_id = _safe_id(title)
+        nodes[node_id] = title
+
+        text = md_file.read_text(encoding="utf-8")
+
+        # 从 frontmatter 提取 related
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                fm = parts[1]
+                for line in fm.split("\n"):
+                    line = line.strip()
+                    if line.startswith("related:"):
+                        # related: [xxx, yyy] 或多行格式
+                        related_str = line[8:].strip().strip("[]")
+                        for item in related_str.split(","):
+                            item = item.strip().strip('"').strip("'")
+                            if item:
+                                target_id = _safe_id(item)
+                                if target_id != node_id:
+                                    nodes.setdefault(target_id, item)
+                                    edges.append((node_id, target_id))
+
+        # 从正文提取 [[双链]] 引用
+        for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
+            ref_name = m.group(1).strip()
+            ref_id = _safe_id(ref_name)
+            if ref_id != node_id and ref_id:
+                nodes.setdefault(ref_id, ref_name)
+                edges.append((node_id, ref_id))
+
+    if not nodes:
+        return False
+
+    # 去重边
+    edges = list(set(edges))
+
+    # 生成 mermaid graph
+    lines = [
+        "---",
+        "hide:",
+        "  - navigation",
+        "---",
+        "",
+        "# 知识图谱",
+        "",
+        "概念与文章之间的关联关系，自动从 `[[双链]]` 和 `related` 字段提取。",
+        "",
+        "```mermaid",
+        "graph LR",
+    ]
+
+    for nid, name in nodes.items():
+        # 截断过长的名称
+        display = name if len(name) <= 20 else name[:17] + "..."
+        lines.append(f'    {nid}["{display}"]')
+
+    for src, dst in edges:
+        lines.append(f"    {src} --> {dst}")
+
+    lines.append("```")
+    lines.append("")
+
+    # 统计
+    lines.append(f"<small>{len(nodes)} 个节点 · {len(edges)} 条关联</small>")
+
+    graph_path = wiki_dir / "graph.md"
+    graph_path.write_text("\n".join(lines), encoding="utf-8")
+    return True
+
+
+def _safe_id(name: str) -> str:
+    """把名称转为 mermaid 安全的节点 ID。"""
+    import re
+
+    # 只保留中文、字母、数字
+    safe = re.sub(r"[^\w\u4e00-\u9fff]", "", name)
+    return safe[:30] if safe else "unknown"
+
+
+# ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
 
@@ -250,6 +420,15 @@ def main():
         print("  build   构建静态站点到 vault/site/")
         print("  deploy  发布到 GitHub Pages")
         sys.exit(1)
+
+    # 预处理：双链渲染 + 生成图谱页面
+    link_map = _build_wikilink_map(cfg.docs_dir)
+    replaced = _resolve_wikilinks(cfg.docs_dir, link_map)
+    graph_generated = _generate_graph_page(cfg.docs_dir, link_map)
+    if replaced:
+        print(f"双链:       {replaced} 个 [[wikilink]] 已渲染")
+    if graph_generated:
+        print(f"图谱:       wiki/graph.md 已生成")
 
     # 生成 mkdocs.yml 到 vault 根目录
     mkdocs_config = _generate_mkdocs_config(cfg)

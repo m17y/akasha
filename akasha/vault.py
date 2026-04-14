@@ -365,19 +365,20 @@ class Vault:
 
         return AgentLoop(self, on_step=on_step)
 
-    async def ask(self, message: str, on_step=None) -> str:
+    async def ask(self, message: str, on_step=None, user_id: str = "") -> str:
         """用自然语言和知识库交互（通过 Agent）。
 
         这是最高层的接口。用户说一句话，Agent 自己决定做什么。
 
         Args:
             message: 用户输入
+            user_id: 用户标识（用于持久化会话记忆）
 
         Returns:
             Agent 的回复
         """
         agent = self.create_agent(on_step=on_step)
-        return await agent.run(message)
+        return await agent.run(message, user_id=user_id)
 
     # ── 状态 ──
 
