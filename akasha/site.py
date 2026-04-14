@@ -2,7 +2,7 @@
 mkdocs-material 站点生成器。
 
 目录结构:
-  ~/knowledge-base/            ← vault 根目录
+  ~/akasha/                    ← vault 根目录
   ├── mkdocs.yml               ← 动态生成
   ├── docs/                    ← Markdown 内容 (mkdocs docs_dir)
   └── site/                    ← 构建产物 (mkdocs site_dir)

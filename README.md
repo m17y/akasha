@@ -14,7 +14,7 @@ uv tool install --from /path/to/akasha akasha
 akasha init
 
 # 3. 放入你的笔记
-cp my-notes.md ~/knowledge-base/docs/raw/notes/
+cp my-notes.md ~/akasha/docs/raw/notes/
 
 # 4. 查看状态
 akasha status
@@ -51,15 +51,21 @@ akasha status
 
 ## 安装
 
-### 方式一：全局安装（推荐）
+### 方式一：从 GitHub 安装（推荐）
+
+```bash
+uv tool install --from git+https://github.com/m17y/akasha akasha
+```
+
+安装后可以在任何目录直接使用 `akasha` 和 `akasha-site` 命令。
+
+### 方式二：从本地路径安装
 
 ```bash
 uv tool install --from /path/to/akasha akasha
 ```
 
-安装后可以在任何目录直接使用 `akasha` 和 `akasha-site` 命令。
-
-### 方式二：项目内运行
+### 方式三：项目内运行（开发用）
 
 ```bash
 cd /path/to/akasha
@@ -73,7 +79,7 @@ uv run akasha help
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `AKASHA_VAULT_PATH` | `~/knowledge-base` | 知识库根目录 |
+| `AKASHA_VAULT_PATH` | `~/akasha` | 知识库根目录 |
 | `AKASHA_LLM_API_KEY` | (空) | LLM API Key。不设则 ingest/save 不可用，搜索正常 |
 | `AKASHA_LLM_BASE_URL` | `https://api.openai.com/v1` | 任何 OpenAI 兼容端点 |
 | `AKASHA_LLM_MODEL` | `gpt-4o` | LLM 模型名 |
@@ -89,7 +95,7 @@ akasha init
 自动创建目录结构：
 
 ```
-~/knowledge-base/              ← AKASHA_VAULT_PATH
+~/akasha/                      ← AKASHA_VAULT_PATH
 ├── mkdocs.yml                 ← 站点配置（动态生成）
 ├── docs/                      ← 所有 Markdown 内容
 │   ├── index.md               ← 知识库目录（自动维护）
@@ -124,7 +130,7 @@ akasha init
       "enabled": true,
       "timeout": 30000,
       "environment": {
-        "AKASHA_VAULT_PATH": "/Users/你的用户名/knowledge-base",
+        "AKASHA_VAULT_PATH": "/Users/你的用户名/akasha",
         "AKASHA_LLM_API_KEY": "sk-xxx",
         "AKASHA_LLM_BASE_URL": "https://api.openai.com/v1",
         "AKASHA_LLM_MODEL": "gpt-4o"
@@ -179,7 +185,7 @@ akasha              # 启动 MCP Server（供 AI 客户端连接，一般不需�
 
 ```bash
 akasha-site serve   # 本地预览 http://127.0.0.1:8800
-akasha-site build   # 构建静态站点到 ~/knowledge-base/site/
+akasha-site build   # 构建静态站点到 ~/akasha/site/
 akasha-site deploy  # 发布到 GitHub Pages
 ```
 
