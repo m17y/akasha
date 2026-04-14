@@ -3,8 +3,8 @@
 
 优先级: 环境变量 > 默认值
 
-Vault 目录结构（由 AKASHA_VAULT_PATH 指定，默认 ~/knowledge-base）:
-  ~/knowledge-base/            ← vault 根目录
+Vault 目录结构（由 AKASHA_VAULT_PATH 指定，默认 ~/akasha）:
+  ~/akasha/                    ← vault 根目录
   ├── mkdocs.yml               ← 站点配置（动态生成）
   ├── docs/                    ← 所有 Markdown 内容（mkdocs docs_dir）
   │   ├── schema.md
@@ -26,7 +26,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_DEFAULT_VAULT = str(Path.home() / "knowledge-base")
+_DEFAULT_VAULT = str(Path.home() / "akasha")
 
 
 @dataclass
