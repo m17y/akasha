@@ -46,18 +46,17 @@ class Config:
     )
     collection_name: str = "akasha"
 
-    # ── LLM 配置（用于 ingest / save_as_page / lint_wiki）──
+    # ── LLM 配置（用于 ingest / save_as_page / lint_wiki / Agent）──
+    llm_provider: str = field(
+        default_factory=lambda: os.getenv("AKASHA_LLM_PROVIDER", "openai")
+    )
     llm_api_key: str = field(
         default_factory=lambda: os.getenv("AKASHA_LLM_API_KEY", "")
     )
     llm_base_url: str = field(
-        default_factory=lambda: os.getenv(
-            "AKASHA_LLM_BASE_URL", "https://api.openai.com/v1"
-        )
+        default_factory=lambda: os.getenv("AKASHA_LLM_BASE_URL", "")
     )
-    llm_model: str = field(
-        default_factory=lambda: os.getenv("AKASHA_LLM_MODEL", "gpt-4o")
-    )
+    llm_model: str = field(default_factory=lambda: os.getenv("AKASHA_LLM_MODEL", ""))
 
     # ── 搜索 ──
     default_top_k: int = field(
@@ -115,6 +114,28 @@ class Config:
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)
+
+    @property
+    def llm_base_url_resolved(self) -> str:
+        """返回实际使用的 base_url（未设置时按 provider 给默认值）。"""
+        if self.llm_base_url:
+            return self.llm_base_url
+        defaults = {
+            "openai": "https://api.openai.com/v1",
+            "anthropic": "https://api.anthropic.com",
+        }
+        return defaults.get(self.llm_provider, "https://api.openai.com/v1")
+
+    @property
+    def llm_model_resolved(self) -> str:
+        """返回实际使用的 model 名称（未设置时按 provider 给默认值）。"""
+        if self.llm_model:
+            return self.llm_model
+        defaults = {
+            "openai": "gpt-4o",
+            "anthropic": "claude-sonnet-4-20250514",
+        }
+        return defaults.get(self.llm_provider, "gpt-4o")
 
 
 def load_config() -> Config:

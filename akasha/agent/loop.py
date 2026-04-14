@@ -74,15 +74,15 @@ class AgentLoop:
         if llm_client is not None:
             self.llm = llm_client
         else:
-            from ..llm import LLMClient
+            from ..llm import create_llm_client
 
-            self.llm = LLMClient(vault.config)
+            self.llm = create_llm_client(vault.config)
 
         self._system_prompt = self._build_system_prompt()
         self.steps: list[AgentStep] = []
 
     def _build_system_prompt(self) -> str:
-        """拼装 system prompt = system.md + skill prompts。"""
+        """拼装 system prompt = system.md + 运行时信息 + skill prompts。"""
         prompts_dir = Path(__file__).parent / "prompts"
 
         # 读取 system.md
@@ -90,6 +90,15 @@ class AgentLoop:
         parts = []
         if system_md.exists():
             parts.append(system_md.read_text(encoding="utf-8"))
+
+        # 注入运行时信息（模型、知识库状态等）
+        cfg = self.vault.config
+        runtime_info = (
+            f"\n## 运行时信息\n\n"
+            f"- 底层模型: {cfg.llm_model_resolved} (provider: {cfg.llm_provider})\n"
+            f"- 知识库路径: {cfg.vault_path}\n"
+        )
+        parts.append(runtime_info)
 
         # 读取 schema.md（从 vault）
         if self.vault.config.schema_path.exists():
@@ -177,23 +186,15 @@ class AgentLoop:
         return f"已执行 {len(self.steps)} 步，以下是最近完成的操作:\n{summary}"
 
     async def _call_llm(self, messages: list[AgentMessage]) -> str:
-        """调用 LLM。"""
-        # 转换为 OpenAI 消息格式
-        oai_messages = []
+        """调用 LLM（通过统一的 LLMClient 接口）。"""
+        api_messages = []
         for msg in messages:
             role = msg.role
             if role == "tool_result":
-                role = "user"  # tool 结果作为 user 消息发给 LLM
-            oai_messages.append({"role": role, "content": msg.content})
+                role = "user"
+            api_messages.append({"role": role, "content": msg.content})
 
-        from openai import AsyncOpenAI
-
-        resp = await self.llm._client.chat.completions.create(
-            model=self.llm._model,
-            messages=oai_messages,
-            max_tokens=4096,
-        )
-        return resp.choices[0].message.content or ""
+        return await self.llm.chat_messages(api_messages, max_tokens=4096)
 
     @staticmethod
     def _parse_action(text: str) -> tuple[str, dict] | None:

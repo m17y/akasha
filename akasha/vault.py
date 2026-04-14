@@ -260,9 +260,9 @@ class Vault:
         """懒初始化 Compiler。"""
         if self._compiler is None:
             from .compiler import Compiler
-            from .llm import LLMClient
+            from .llm import create_llm_client
 
-            llm = LLMClient(self.config)
+            llm = create_llm_client(self.config)
             self._compiler = Compiler(self.config, self.files, llm)
         return self._compiler
 
@@ -391,8 +391,13 @@ class Vault:
             "docs_dir": str(self.config.docs_dir),
             "chroma_dir": str(self.config.chroma_dir),
             "llm_configured": self.config.llm_configured,
-            "llm_model": self.config.llm_model if self.config.llm_configured else None,
-            "llm_base_url": self.config.llm_base_url
+            "llm_provider": self.config.llm_provider
+            if self.config.llm_configured
+            else None,
+            "llm_model": self.config.llm_model_resolved
+            if self.config.llm_configured
+            else None,
+            "llm_base_url": self.config.llm_base_url_resolved
             if self.config.llm_configured
             else None,
             "files_count": len(sources),
@@ -410,7 +415,9 @@ class Vault:
             f"embedding:  ChromaDB 内置 (all-MiniLM-L6-v2, 本地运行)",
         ]
         if s["llm_configured"]:
-            lines.append(f"llm:        {s['llm_model']} @ {s['llm_base_url']}")
+            lines.append(
+                f"llm:        [{s['llm_provider']}] {s['llm_model']} @ {s['llm_base_url']}"
+            )
         else:
             lines.append("llm:        未配置 (ingest/save 不可用，搜索正常)")
         lines.append(

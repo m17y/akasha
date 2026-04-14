@@ -307,24 +307,12 @@ class VideoExecutor:
 
     async def _analyze_content(self, info: VideoInfo, transcript: str) -> str:
         """用 LLM 分析转写内容，生成结构化知识文档。"""
-        import os
-
-        api_key = os.getenv("AKASHA_LLM_API_KEY", "")
-        if not api_key:
-            return ""
-
         try:
-            from openai import AsyncOpenAI
+            from ...__init__ import _get_llm_client
 
-            base_url = os.getenv("AKASHA_LLM_BASE_URL", "https://api.openai.com/v1")
-            model = os.getenv("AKASHA_LLM_MODEL", "gpt-4o")
-
-            client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url,
-                timeout=120.0,
-                max_retries=2,
-            )
+            llm = _get_llm_client()
+            if llm is None:
+                return f"## 完整文字稿\n\n{transcript}"
 
             system_prompt = (
                 "你是一个知识库管理助手。用户给你一段视频的转写文字稿，"
@@ -354,19 +342,14 @@ class VideoExecutor:
                 f"请整理为结构化的知识文档。"
             )
 
-            resp = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg},
-                ],
+            return await llm.chat(
+                system=system_prompt,
+                user=user_msg,
                 max_tokens=8192,
                 temperature=0.3,
             )
-            return resp.choices[0].message.content or ""
         except Exception as e:
             print(f"[video] LLM 分析失败: {e}", file=sys.stderr)
-            # fallback: 至少返回转写内容
             return f"## 完整文字稿\n\n{transcript}"
 
     # ── 后端实现 ──

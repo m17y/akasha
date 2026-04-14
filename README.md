@@ -13,133 +13,145 @@ uv tool install --from git+https://github.com/m17y/akasha akasha
 # 初始化知识库
 akasha init
 
-# 放入笔记
-cp my-notes.md ~/akasha/docs/raw/notes/
+# 配置 LLM（任选一种）
+export AKASHA_LLM_API_KEY="sk-xxx"
+export AKASHA_LLM_BASE_URL="https://api.openai.com/v1"
+export AKASHA_LLM_MODEL="gpt-4o"
 
-# 查看状态
-akasha status
+# 启动 Agent
+akasha start
 ```
+
+## 命令
+
+```
+akasha start           启动 Agent（自动检测并启用已配置的通道）
+akasha init            初始化知识库目录结构
+akasha status          查看配置和索引状态
+akasha mcp             启动 MCP Server (stdio)，供 AI 客户端调用
+akasha site serve      知识库网站预览 http://127.0.0.1:8800
+akasha site build      构建静态站点
+akasha site deploy     发布到 GitHub Pages
+```
+
+`akasha start` 会自动检测已配置的通道（飞书等），在后台启用，同时进入交互模式。
 
 ## 使用方式
 
-Akasha 有四种接入方式，核心逻辑相同：
+### 交互模式
 
-| 命令 | 方式 | 适用场景 |
-|------|------|----------|
-| `akasha` | MCP Server (stdio) | AI 客户端（OpenCode / Claude Code / Cursor） |
-| `akasha-cli` | 命令行 | 终端直接使用 |
-| `akasha-feishu` | 飞书 Bot (webhook) | 团队协作，在飞书里管理知识库 |
-| `akasha-site` | 静态站点 (mkdocs) | 浏览器查看知识库 |
-
-### 命令行 (akasha-cli)
-
-```bash
-akasha-cli search "Agent Loop"       # 搜索
-akasha-cli list                       # 列出所有笔记
-akasha-cli read raw/notes/xxx.md     # 读取笔记
-akasha-cli lint                       # Wiki 健康检查
-akasha-cli ask "把最近的文章整理一下"   # Agent 模式（需要 LLM）
-```
-
-### MCP Server (akasha)
-
-启动后 AI 客户端通过 stdio 调用。支持两种模式：
-
-**Agent 模式（推荐）** — 一个 `ask` tool，用户说意图，Agent 自己规划执行：
+`akasha start` 默认进入终端交互：
 
 ```
-搜一下 Agent Loop 设计模式
-把最近的文章都整理一下
-下载这个视频并生成 wiki
+akasha> 搜一下 Agent Loop
+akasha> /search Agent Loop
+akasha> /list
+akasha> /status
+akasha> /help
 ```
 
-**细粒度模式（向后兼容）** — 每个功能一个 tool：
+非命令文本会自动走 Agent 对话（需要 LLM），或作为搜索处理。
 
-| Tool | 说明 |
-|------|------|
-| `search_knowledge` | 语义搜索，支持 tag 过滤 |
-| `list_notes` | 列出已索引文件 |
-| `read_note` | 读取笔记内容 |
-| `refresh_index` | 刷新索引 |
-| `ingest_source` | 摄入源文件生成 wiki 页面 |
-| `save_as_page` | 将内容存为 wiki 页面 |
-| `lint_wiki` | Wiki 健康检查 |
-| `video_download` | 下载视频 |
-| `video_info` | 获取视频信息 |
-| `video_to_wiki` | 下载视频 + 生成 wiki |
-| `web_clip_save` | 剪藏网页 |
-| `web_clip_read` | 提取网页正文 |
-| `media_transcribe` | 音视频转文字 |
-| `media_to_wiki` | 转写 + 生成 wiki |
+### 飞书 Bot
 
-### 飞书 Bot (akasha-feishu)
+配置好飞书环境变量后，`akasha start` 自动启用飞书通道。在飞书群聊或私聊中 @Bot：
 
-在飞书群聊或私聊中管理知识库：
+- 发送视频链接（抖音/B站/YouTube）→ 自动下载、转写、分析，生成知识文档
+- 发送网页链接 → 自动剪藏保存
+- 发送文字 → Agent 对话
 
-```bash
-# 启动（需要先配置飞书凭证）
-akasha-feishu
-```
-
-飞书中发送命令：
+也支持命令：
 
 ```
 /search Agent Loop          搜索知识库
 /clip https://example.com   剪藏网页
-/video https://douyin.com/xxx 下载视频
+/video https://douyin.com/xxx 下载视频并生成 wiki
 /ingest raw/notes/xxx.md    摄入文档
 /status                     查看状态
-/lint                       健康检查
 ```
 
-非命令文本自动当作搜索处理。
+### MCP Server
 
-### 知识库网站 (akasha-site)
+`akasha mcp` 启动 stdio 模式的 MCP Server，供 AI 客户端（OpenCode / Claude Code / Cursor）调用。
 
-```bash
-akasha-site serve   # 本地预览 http://127.0.0.1:8800
-akasha-site build   # 构建静态站点
-akasha-site deploy  # 发布到 GitHub Pages
-```
+### 知识库网站
 
-## 安装
-
-```bash
-# 从 GitHub（推荐）
-uv tool install --from git+https://github.com/m17y/akasha akasha
-
-# 从本地路径
-uv tool install --from /path/to/akasha akasha
-
-# 开发模式
-cd /path/to/akasha && uv sync && uv run akasha help
-```
+`akasha site serve` 启动本地预览，基于知识库内容自动生成 MkDocs Material 站点。
 
 ## 配置
 
-所有配置通过环境变量：
+所有配置通过环境变量，无需配置文件。
 
-**Akasha 核心**
+### 核心配置
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `AKASHA_VAULT_PATH` | `~/akasha` | 知识库根目录 |
-| `AKASHA_LLM_API_KEY` | — | LLM API Key |
-| `AKASHA_LLM_BASE_URL` | `https://api.openai.com/v1` | 任何 OpenAI 兼容端点 |
-| `AKASHA_LLM_MODEL` | `gpt-4o` | LLM 模型名 |
 | `AKASHA_CHROMA_DIR` | `~/.akasha/chroma` | 向量数据库目录 |
 | `AKASHA_DEFAULT_TOP_K` | `5` | 搜索默认返回条数 |
 
-**飞书 Bot（仅 akasha-feishu 使用）**
+### LLM 配置
+
+Akasha 支持两种 LLM Provider，通过 `AKASHA_LLM_PROVIDER` 切换。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `AKASHA_LLM_PROVIDER` | `openai` | Provider 类型：`openai` 或 `anthropic` |
+| `AKASHA_LLM_API_KEY` | — (必填) | API Key |
+| `AKASHA_LLM_BASE_URL` | 按 provider 自动设置 | API 端点 |
+| `AKASHA_LLM_MODEL` | 按 provider 自动设置 | 模型名称 |
+
+**配置示例：**
+
+```bash
+# OpenAI（默认）
+export AKASHA_LLM_PROVIDER="openai"
+export AKASHA_LLM_API_KEY="sk-xxx"
+export AKASHA_LLM_MODEL="gpt-4o"
+
+# MiniMax M2.7（通过 Anthropic API 兼容）
+export AKASHA_LLM_PROVIDER="anthropic"
+export AKASHA_LLM_API_KEY="sk-xxx"
+export AKASHA_LLM_BASE_URL="https://api.minimaxi.com/anthropic"
+export AKASHA_LLM_MODEL="MiniMax-M2.7"
+
+# Anthropic Claude
+export AKASHA_LLM_PROVIDER="anthropic"
+export AKASHA_LLM_API_KEY="sk-ant-xxx"
+export AKASHA_LLM_MODEL="claude-sonnet-4-20250514"
+
+# 自部署 / 代理（任何 OpenAI 兼容端点）
+export AKASHA_LLM_PROVIDER="openai"
+export AKASHA_LLM_API_KEY="sk-xxx"
+export AKASHA_LLM_BASE_URL="http://your-server/v1/"
+export AKASHA_LLM_MODEL="your-model-name"
+
+# Ollama（本地）
+export AKASHA_LLM_PROVIDER="openai"
+export AKASHA_LLM_API_KEY="ollama"
+export AKASHA_LLM_BASE_URL="http://localhost:11434/v1"
+export AKASHA_LLM_MODEL="qwen2.5"
+```
+
+### 飞书通道配置
+
+设置以下环境变量后，`akasha start` 会自动启用飞书通道。
 
 | 环境变量 | 说明 |
 |----------|------|
-| `FEISHU_APP_ID` | 飞书应用 App ID |
-| `FEISHU_APP_SECRET` | 飞书应用 App Secret |
-| `FEISHU_VERIFICATION_TOKEN` | 事件订阅 Verification Token |
-| `FEISHU_ENCRYPT_KEY` | 事件加密 Key（可选） |
-| `FEISHU_BOT_NAME` | Bot 名称（默认 Akasha） |
-| `FEISHU_PORT` | webhook 端口（默认 9000） |
+| `AKASHA_FEISHU_APP_ID` | 飞书应用 App ID (必填) |
+| `AKASHA_FEISHU_APP_SECRET` | 飞书应用 App Secret (必填) |
+| `AKASHA_FEISHU_BOT_NAME` | Bot 名称（默认 Akasha） |
+| `AKASHA_FEISHU_ENCRYPT_KEY` | 事件加密 Key（可选） |
+| `AKASHA_FEISHU_VERIFICATION_TOKEN` | 事件订阅 Verification Token（可选） |
+
+**飞书配置步骤：**
+
+1. [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 → 添加 Bot 能力
+2. 事件订阅 → 订阅方式选「使用长连接接收事件」
+3. 订阅事件：`im.message.receive_v1`
+4. 添加权限：`im:message:send_as_bot`、`im:message.receive_v2`
+5. 发布应用，复制 App ID 和 App Secret
 
 ## 接入 AI 客户端
 
@@ -150,7 +162,7 @@ cd /path/to/akasha && uv sync && uv run akasha help
   "mcp": {
     "akasha": {
       "type": "local",
-      "command": ["akasha"],
+      "command": ["akasha", "mcp"],
       "enabled": true,
       "timeout": 30000,
       "environment": {
@@ -164,7 +176,7 @@ cd /path/to/akasha && uv sync && uv run akasha help
 
 ### Claude Code / Cursor
 
-配置格式相同，参考各客户端 MCP 文档。核心：命令 `akasha`，传输 stdio。
+配置格式相同，参考各客户端 MCP 文档。核心：命令 `akasha mcp`，传输 stdio。
 
 ## 架构
 
@@ -172,9 +184,9 @@ cd /path/to/akasha && uv sync && uv run akasha help
 ┌─────────────────────────────────────┐
 │  接入层（薄壳，只做协议转换）         │
 │  ├── serve/mcp.py    MCP Server     │
-│  ├── serve/cli.py    命令行          │
+│  ├── serve/cli.py    终端交互        │
 │  ├── serve/feishu.py 飞书 Bot        │
-│  └── site.py         静态站点        │
+│  └── site.py         知识库站点      │
 ├─────────────────────────────────────┤
 │  Agent（大脑）                       │
 │  ├── agent/loop.py   决策循环        │
@@ -189,65 +201,35 @@ cd /path/to/akasha && uv sync && uv run akasha help
 │  ├── compiler.py     知识编译        │
 │  ├── storage/        文件 + 向量索引  │
 │  ├── skills/         可插拔扩展       │
-│  │   ├── video/      视频下载        │
+│  │   ├── video/      视频下载+分析   │
 │  │   ├── web_clip/   网页剪藏        │
 │  │   └── media/      音视频转写       │
 │  └── llm.py          LLM 客户端      │
 └─────────────────────────────────────┘
 ```
 
-核心设计：**Vault 是唯一入口**。所有接入层（MCP / CLI / 飞书）都调同一个 Vault 实例，不直接操作底层模块。
+核心设计：**Vault 是唯一入口**。所有接入层都调同一个 Vault 实例，不直接操作底层模块。
 
 ## 知识库结构
 
 ```
 ~/akasha/
 ├── docs/
-│   ├── index.md               ← 知识库目录（自动维护）
+│   ├── index.md               ← 首页仪表盘（自动生成）
 │   ├── schema.md              ← wiki 规则（可自定义）
 │   ├── log.md                 ← 操作日志
-│   ├── raw/                   ← 原始素材（LLM 只读）
+│   ├── raw/                   ← 原始素材（你写的，LLM 只读）
 │   │   ├── analysis/
 │   │   ├── notes/
 │   │   └── articles/
-│   ├── wiki/                  ← LLM 维护的 wiki 页面
-│   │   ├── concepts/
-│   │   ├── entities/
-│   │   ├── comparisons/
-│   │   └── synthesis/
-│   └── assets/video/
+│   ├── wiki/                  ← LLM 维护的知识页面
+│   │   ├── articles/          ← 文章（视频分析、网页剪藏）
+│   │   ├── concepts/          ← 概念词条
+│   │   ├── entities/          ← 实体记录
+│   │   ├── comparisons/       ← 对比分析
+│   │   └── synthesis/         ← 综合总结
+│   └── assets/video/          ← 下载的视频文件
 └── site/                      ← 站点构建产物
-```
-
-三层知识架构：
-- **Raw** — 你的原始笔记，LLM 只读不写
-- **Wiki** — LLM 维护的结构化页面
-- **Schema** — wiki 组织规则
-
-## 项目结构
-
-```
-akasha/
-├── vault.py                 # 知识库唯一入口
-├── config.py                # 配置
-├── compiler.py              # 知识编译（ingest / save / lint）
-├── llm.py                   # LLM 客户端
-├── site.py                  # mkdocs 站点生成
-├── storage/
-│   ├── files.py             # 文件读写 + 路径安全
-│   └── index.py             # 向量索引
-├── agent/
-│   ├── loop.py              # Agent Loop
-│   ├── executor.py          # 执行 action
-│   └── prompts/system.md    # Agent prompt
-├── skills/
-│   ├── video/               # 视频（tikwm + yt-dlp）
-│   ├── web_clip/            # 网页剪藏
-│   └── media/               # 音视频转写（whisper）
-└── serve/
-    ├── mcp.py               # MCP Server
-    ├── cli.py               # 命令行
-    └── feishu.py            # 飞书 Bot
 ```
 
 ## 添加新 Skill
@@ -268,9 +250,9 @@ skill.md 同时是 Agent 的能力说明书 — Agent 启动时读取所有 skil
 |------|------|
 | 核心 | Python 3.12+ / uv |
 | 向量搜索 | ChromaDB（内置 all-MiniLM-L6-v2，本地 embedding） |
-| LLM | OpenAI 兼容 API（自动重试，120s 超时） |
+| LLM | OpenAI + Anthropic 双 Provider（自动重试，120s 超时） |
 | MCP | `mcp` SDK + `FastMCP`（stdio） |
-| 飞书 | `lark-oapi` + Starlette + Uvicorn |
+| 飞书 | `lark-oapi`（WebSocket 长连接） |
 | 站点 | mkdocs-material |
 | 视频 | tikwm API + yt-dlp |
 | 剪藏 | 内置 HTML 解析器 |
@@ -285,7 +267,7 @@ skill.md 同时是 Agent 的能力说明书 — Agent 启动时读取所有 skil
 ## 运行测试
 
 ```bash
-uv run pytest tests/ -v    # 119 个测试
+uv run pytest tests/ -v
 ```
 
 ## License
