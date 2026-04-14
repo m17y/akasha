@@ -380,6 +380,10 @@ def _register_skill_tools() -> int:
             "video_download": "download",
             "video_info": "info",
             "video_to_wiki": "to_wiki",
+            "web_clip_save": "save",
+            "web_clip_read": "read",
+            "media_transcribe": "transcribe",
+            "media_to_wiki": "to_wiki",
         }
 
         for tool_name in skill.tools:
@@ -448,6 +452,66 @@ def _register_one_tool(mcp_instance, tool_name: str, skill, handler):
                 get_indexer().refresh()
 
             return f"已生成 wiki 页面: {page_path}"
+
+    elif tool_name == "web_clip_save":
+
+        @mcp_instance.tool()
+        async def web_clip_save(url: str, category: str = "articles") -> str:
+            """剪藏网页 — 提取正文保存为 wiki 页面。
+
+            Args:
+                url: 网页链接
+                category: 保存分类 (articles/concepts/entities/synthesis)
+            """
+            docs_dir = config.docs_dir if config.docs_dir.exists() else None
+            page_path = await handler(url, docs_dir=docs_dir, category=category)
+
+            if docs_dir:
+                get_indexer().refresh()
+
+            return f"已保存: {page_path}"
+
+    elif tool_name == "web_clip_read":
+
+        @mcp_instance.tool()
+        async def web_clip_read(url: str) -> str:
+            """提取网页正文（不保存），返回 Markdown。
+
+            Args:
+                url: 网页链接
+            """
+            return await handler(url)
+
+    elif tool_name == "media_transcribe":
+
+        @mcp_instance.tool()
+        async def media_transcribe(source: str) -> str:
+            """提取音视频中的语音，转为文字稿。
+
+            支持本地文件路径或 URL。需要 ffmpeg 和 whisper。
+
+            Args:
+                source: 本地文件路径或 URL
+            """
+            return await handler(source)
+
+    elif tool_name == "media_to_wiki":
+
+        @mcp_instance.tool()
+        async def media_to_wiki(source: str, title: str = "") -> str:
+            """提取音视频语音 → 生成文字稿 wiki 页面。
+
+            Args:
+                source: 本地文件路径或 URL
+                title: 页面标题（不填则自动生成）
+            """
+            docs_dir = config.docs_dir if config.docs_dir.exists() else None
+            page_path = await handler(source, title=title, docs_dir=docs_dir)
+
+            if docs_dir:
+                get_indexer().refresh()
+
+            return f"已生成: {page_path}"
 
 
 # ---------------------------------------------------------------------------
