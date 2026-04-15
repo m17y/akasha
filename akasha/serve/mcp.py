@@ -262,6 +262,18 @@ def main():
         site_main()
         return
 
+    if cmd == "export":
+        _export_vault(vault)
+        return
+
+    if cmd == "import":
+        archive = sys.argv[2] if len(sys.argv) > 2 else None
+        if not archive:
+            print("用法: akasha import <archive.tar.gz>")
+            sys.exit(1)
+        _import_vault(vault, archive)
+        return
+
     if cmd == "mcp":
         # MCP Server（stdio 模式，独占终端）
         vault.init()
@@ -381,6 +393,62 @@ def _start_agent():
         _repl(vault)
 
 
+def _export_vault(vault):
+    """一键打包知识库为 tar.gz。"""
+    import tarfile
+    from datetime import datetime
+
+    vault.init()
+    docs_dir = vault.config.docs_dir
+    if not docs_dir.exists():
+        print(f"docs 目录不存在: {docs_dir}")
+        return
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_name = f"akasha-export-{ts}.tar.gz"
+    archive_path = vault.config.vault_path / archive_name
+
+    print(f">>> 打包知识库...")
+    with tarfile.open(archive_path, "w:gz") as tar:
+        # 打包 docs/ (wiki、raw 等所有内容)
+        tar.add(docs_dir, arcname="docs")
+        # 打包 mkdocs.yml (如果存在)
+        yml = vault.config.vault_path / "mkdocs.yml"
+        if yml.exists():
+            tar.add(yml, arcname="mkdocs.yml")
+
+    size_mb = archive_path.stat().st_size / 1024 / 1024
+    print(f">>> 打包完成: {archive_path}")
+    print(f"    大小: {size_mb:.1f} MB")
+    print(f"    迁移: 复制到新机器后执行 akasha import {archive_name}")
+
+
+def _import_vault(vault, archive: str):
+    """从 tar.gz 导入知识库。"""
+    import tarfile
+    from pathlib import Path
+
+    archive_path = Path(archive)
+    if not archive_path.exists():
+        # 也在 vault 目录下找
+        archive_path = vault.config.vault_path / archive
+    if not archive_path.exists():
+        print(f"文件不存在: {archive}")
+        return
+
+    vault.init()
+    docs_dir = vault.config.docs_dir
+
+    print(f">>> 导入知识库: {archive_path}")
+    with tarfile.open(archive_path, "r:gz") as tar:
+        tar.extractall(path=vault.config.vault_path)
+
+    print(f">>> 导入完成，刷新索引...")
+    vault.ensure_indexed()
+    vault.index.refresh()
+    print(vault.status_formatted())
+
+
 def _print_help():
     print("Akasha — 个人 AI 知识库引擎")
     print()
@@ -392,6 +460,8 @@ def _print_help():
     print("  akasha site serve      知识库网站预览")
     print("  akasha site build      构建静态站点")
     print("  akasha site deploy     发布到 GitHub Pages")
+    print("  akasha export          一键打包知识库为 tar.gz")
+    print("  akasha import <file>   从 tar.gz 导入知识库")
     print()
     print("通道配置（通过环境变量）:")
     print("  AKASHA_FEISHU_APP_ID + AKASHA_FEISHU_APP_SECRET  → 启用飞书通道")
