@@ -10,8 +10,9 @@ build/
 # ChromaDB 本地数据
 .akasha/
 
-# mkdocs 构建产物
-site/
+# mkdocs 构建产物（只忽略 vault 根目录下的 site/，不忽略 akasha/site/ 包）
+**/site/
+!akasha/site/
 mkdocs.yml
 
 # uv
