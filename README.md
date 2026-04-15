@@ -18,8 +18,66 @@ export AKASHA_LLM_API_KEY="sk-xxx"
 export AKASHA_LLM_BASE_URL="https://api.openai.com/v1"
 export AKASHA_LLM_MODEL="gpt-4o"
 
+# 查看状态（确认配置是否生效）
+akasha status
+
 # 启动 Agent
 akasha start
+```
+
+## 安装与更新
+
+```bash
+# 首次安装
+uv tool install --from git+https://github.com/m17y/akasha akasha
+
+# 更新到最新版
+uv tool install --force --from git+https://github.com/m17y/akasha akasha
+
+# 从本地代码安装（开发用）
+uv tool install --force --editable /path/to/akasha
+
+# 卸载
+uv tool uninstall akasha
+
+# 清理数据（谨慎）
+rm -rf ~/.akasha          # 向量数据库 + 会话记忆
+rm -rf ~/akasha           # 知识库内容
+```
+
+### pm2 部署（后台常驻）
+
+```bash
+# 创建 ecosystem 配置（按需修改环境变量）
+cat > ~/akasha/ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: "akasha",
+    script: "akasha",
+    args: "start",
+    interpreter: "none",
+    env: {
+      AKASHA_VAULT_PATH: process.env.HOME + "/akasha",
+      AKASHA_LLM_PROVIDER: "anthropic",
+      AKASHA_LLM_API_KEY: "sk-xxx",
+      AKASHA_LLM_BASE_URL: "https://api.minimaxi.com/anthropic",
+      AKASHA_LLM_MODEL: "MiniMax-M2.7",
+      AKASHA_FEISHU_APP_ID: "cli_xxx",
+      AKASHA_FEISHU_APP_SECRET: "xxx",
+    },
+  }],
+};
+EOF
+
+# 启动
+pm2 start ~/akasha/ecosystem.config.js
+
+# 常用命令
+pm2 logs akasha        # 查看日志
+pm2 restart akasha     # 重启
+pm2 stop akasha        # 停止
+pm2 delete akasha      # 删除
+pm2 save && pm2 startup  # 开机自启
 ```
 
 ## 命令
