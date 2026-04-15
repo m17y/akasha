@@ -113,6 +113,7 @@ class AnthropicClient(LLMClient):
     """Anthropic API 客户端（支持 Anthropic 原生 + MiniMax 兼容）。"""
 
     def __init__(self, config: Config):
+        import asyncio
         from anthropic import AsyncAnthropic
 
         self._client = AsyncAnthropic(
@@ -122,58 +123,68 @@ class AnthropicClient(LLMClient):
             max_retries=3,
         )
         self._model = config.llm_model_resolved
+        # 限流：同时最多 1 个请求，避免并发触发 MiniMax 529
+        self._semaphore = asyncio.Semaphore(1)
 
     async def chat(self, system, user, temperature=None, max_tokens=4096):
-        kwargs: dict = {
-            "model": self._model,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-            "max_tokens": max_tokens,
-        }
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+        async with self._semaphore:
+            kwargs: dict = {
+                "model": self._model,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+                "max_tokens": max_tokens,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
 
     async def chat_with_context(
         self, system, context, user, temperature=None, max_tokens=4096
     ):
-        kwargs: dict = {
-            "model": self._model,
-            "system": system,
-            "messages": [
-                {"role": "user", "content": f"以下是相关上下文:\n\n{context}"},
-                {"role": "assistant", "content": "已理解上下文，请告诉我你需要什么。"},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": max_tokens,
-        }
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+        async with self._semaphore:
+            kwargs: dict = {
+                "model": self._model,
+                "system": system,
+                "messages": [
+                    {"role": "user", "content": f"以下是相关上下文:\n\n{context}"},
+                    {
+                        "role": "assistant",
+                        "content": "已理解上下文，请告诉我你需要什么。",
+                    },
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
 
     async def chat_messages(self, messages, max_tokens=4096, temperature=None):
-        # Anthropic 格式: system 单独提取，messages 只含 user/assistant
-        system = ""
-        api_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system = msg["content"]
-            else:
-                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        async with self._semaphore:
+            # Anthropic 格式: system 单独提取，messages 只含 user/assistant
+            system = ""
+            api_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system = msg["content"]
+                else:
+                    api_messages.append(
+                        {"role": msg["role"], "content": msg["content"]}
+                    )
 
-        kwargs: dict = {
-            "model": self._model,
-            "messages": api_messages,
-            "max_tokens": max_tokens,
-        }
-        if system:
-            kwargs["system"] = system
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+            kwargs: dict = {
+                "model": self._model,
+                "messages": api_messages,
+                "max_tokens": max_tokens,
+            }
+            if system:
+                kwargs["system"] = system
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
 
     @staticmethod
     def _extract_text(resp) -> str:
