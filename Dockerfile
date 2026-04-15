@@ -27,6 +27,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # 默认数据目录
 ENV AKASHA_VAULT_PATH="/data/akasha"
 ENV AKASHA_CHROMA_DIR="/data/chroma"
+# Docker 里 site serve 需要监听 0.0.0.0
+ENV AKASHA_SITE_HOST="0.0.0.0"
 
 VOLUME ["/data"]
 

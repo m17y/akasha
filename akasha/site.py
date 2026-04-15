@@ -451,8 +451,9 @@ def main():
         # 用 Python 模块调用 mkdocs（避免依赖系统 PATH 中的 mkdocs 命令）
         mkdocs_cmd = [sys.executable, "-m", "mkdocs", cmd, "-f", str(yml_path)]
         if cmd == "serve":
-            mkdocs_cmd.extend(["-a", "127.0.0.1:8800"])
-            print(f"url:        http://127.0.0.1:8800")
+            host = os.getenv("AKASHA_SITE_HOST", "127.0.0.1")
+            mkdocs_cmd.extend(["-a", f"{host}:8800"])
+            print(f"url:        http://{host}:8800")
         subprocess.run(mkdocs_cmd, check=True)
 
 

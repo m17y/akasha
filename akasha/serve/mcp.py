@@ -306,6 +306,24 @@ def _start_agent():
         thread.start()
         channels_started.append("飞书")
 
+    # Wiki 网站：检测到 AKASHA_SITE_SERVE=true 自动启用
+    if os.getenv("AKASHA_SITE_SERVE", "").lower() in ("true", "1", "yes"):
+
+        def _start_site():
+            import subprocess
+
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "akasha.site", "serve"],
+                    check=False,
+                )
+            except Exception as e:
+                print(f"Wiki 站点启动失败: {e}")
+
+        site_thread = threading.Thread(target=_start_site, daemon=True)
+        site_thread.start()
+        channels_started.append("Wiki (8800)")
+
     if channels_started:
         print(f"通道:       {', '.join(channels_started)}")
         print()

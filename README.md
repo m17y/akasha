@@ -206,6 +206,8 @@ akasha> /help
 | `AKASHA_CHROMA_DIR` | `~/.akasha/chroma` | 向量数据库目录 |
 | `AKASHA_DEFAULT_TOP_K` | `5` | 搜索默认返回条数 |
 | `AKASHA_SITE_REPO` | — (可选) | GitHub Pages 仓库地址，用于 `akasha site deploy` |
+| `AKASHA_SITE_SERVE` | `false` | 设为 `true` 时 `akasha start` 同时启动 Wiki 网站（端口 8800） |
+| `AKASHA_SITE_HOST` | `127.0.0.1` | Wiki 网站监听地址，Docker 中自动设为 `0.0.0.0` |
 
 ### LLM 配置
 

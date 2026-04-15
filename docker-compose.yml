@@ -1,31 +1,27 @@
 services:
-  # Agent 服务（飞书通道等）
   akasha:
     image: ghcr.io/m17y/akasha:latest
+    # build: .  # 本地构建时取消注释此行，注释上面的 image
     container_name: akasha
     restart: unless-stopped
-    command: ["akasha", "start"]
     volumes:
       - akasha-data:/data
-    env_file:
-      - .env
     environment:
+      # ── 数据目录（容器内固定路径，无需修改）──
       - AKASHA_VAULT_PATH=/data/akasha
       - AKASHA_CHROMA_DIR=/data/chroma
-
-  # Wiki 网站服务
-  akasha-site:
-    image: ghcr.io/m17y/akasha:latest
-    container_name: akasha-site
-    restart: unless-stopped
-    command: ["akasha", "site", "serve"]
-    volumes:
-      - akasha-data:/data
-    env_file:
-      - .env
-    environment:
-      - AKASHA_VAULT_PATH=/data/akasha
-      - AKASHA_CHROMA_DIR=/data/chroma
+      # ── LLM 配置（必填）──
+      - AKASHA_LLM_PROVIDER=anthropic
+      - AKASHA_LLM_API_KEY=sk-xxx
+      - AKASHA_LLM_BASE_URL=https://api.minimaxi.com/anthropic
+      - AKASHA_LLM_MODEL=MiniMax-M2.7
+      # ── 飞书通道（不用可删除）──
+      - AKASHA_FEISHU_APP_ID=
+      - AKASHA_FEISHU_APP_SECRET=
+      # ── GitHub Pages 部署（不用可留空）──
+      - AKASHA_SITE_REPO=
+      # ── Wiki 网站预览（设为 true 启用，端口 8800）──
+      - AKASHA_SITE_SERVE=false
     ports:
       - "8800:8800"
 
