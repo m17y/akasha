@@ -384,9 +384,18 @@ class Vault:
 
     def status(self) -> dict:
         """返回知识库状态信息。"""
+        import os
+
         self.ensure_indexed()
         sources = self.index.get_all_sources()
         skill_count = len(self.skill_registry.actions) if self._skills_loaded else 0
+
+        # 飞书通道状态
+        feishu_app_id = os.getenv("AKASHA_FEISHU_APP_ID", "")
+        feishu_configured = bool(
+            feishu_app_id and os.getenv("AKASHA_FEISHU_APP_SECRET", "")
+        )
+
         return {
             "vault_path": str(self.config.vault_path),
             "docs_dir": str(self.config.docs_dir),
@@ -404,26 +413,55 @@ class Vault:
             "files_count": len(sources),
             "chunks_count": self.index.count(),
             "skills_count": skill_count,
+            "feishu_configured": feishu_configured,
+            "feishu_bot_name": os.getenv("AKASHA_FEISHU_BOT_NAME", "Akasha")
+            if feishu_configured
+            else None,
         }
 
     def status_formatted(self) -> str:
         """返回格式化的状态文本。"""
         s = self.status()
         lines = [
-            f"vault:      {s['vault_path']}",
-            f"docs:       {s['docs_dir']}",
-            f"chroma:     {s['chroma_dir']}",
-            f"embedding:  ChromaDB 内置 (all-MiniLM-L6-v2, 本地运行)",
+            "",
+            "=== Akasha 状态 ===",
+            "",
+            f"  知识库:    {s['vault_path']}",
+            f"  文档目录:  {s['docs_dir']}",
+            f"  向量库:    {s['chroma_dir']}",
+            f"  Embedding: ChromaDB 内置 (all-MiniLM-L6-v2, 本地)",
+            f"  已索引:    {s['files_count']} 个文件, {s['chunks_count']} 个 chunks",
         ]
-        if s["llm_configured"]:
-            lines.append(
-                f"llm:        [{s['llm_provider']}] {s['llm_model']} @ {s['llm_base_url']}"
-            )
-        else:
-            lines.append("llm:        未配置 (ingest/save 不可用，搜索正常)")
-        lines.append(
-            f"已索引:     {s['files_count']} 个文件, {s['chunks_count']} 个 chunks"
-        )
         if s["skills_count"]:
-            lines.append(f"skills:     {s['skills_count']} 个 tool 已注册")
+            lines.append(f"  Skills:    {s['skills_count']} 个 tool 已注册")
+
+        # LLM 状态
+        lines.append("")
+        lines.append("--- LLM ---")
+        if s["llm_configured"]:
+            lines.append(f"  状态:      已配置 ✓")
+            lines.append(f"  Provider:  {s['llm_provider']}")
+            lines.append(f"  模型:      {s['llm_model']}")
+            lines.append(f"  端点:      {s['llm_base_url']}")
+        else:
+            lines.append(f"  状态:      未配置 ✗")
+            lines.append(f"  影响:      ingest / save / ask 不可用，搜索正常")
+            lines.append(f"  配置方法:")
+            lines.append(f'    export AKASHA_LLM_API_KEY="sk-xxx"')
+            lines.append(f'    export AKASHA_LLM_PROVIDER="openai"  # 或 anthropic')
+            lines.append(f'    export AKASHA_LLM_MODEL="gpt-4o"    # 可选')
+
+        # 飞书通道状态
+        lines.append("")
+        lines.append("--- 飞书通道 ---")
+        if s["feishu_configured"]:
+            lines.append(f"  状态:      已配置 ✓")
+            lines.append(f"  Bot:       {s['feishu_bot_name']}")
+        else:
+            lines.append(f"  状态:      未配置 ✗")
+            lines.append(f"  配置方法:")
+            lines.append(f'    export AKASHA_FEISHU_APP_ID="cli_xxx"')
+            lines.append(f'    export AKASHA_FEISHU_APP_SECRET="xxx"')
+
+        lines.append("")
         return "\n".join(lines)
