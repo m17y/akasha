@@ -119,66 +119,98 @@ class AnthropicClient(LLMClient):
             api_key=config.llm_api_key,
             base_url=config.llm_base_url_resolved,
             timeout=120.0,
-            max_retries=8,
+            max_retries=10,
         )
         self._model = config.llm_model_resolved
 
+    async def _call_with_retry(self, func, *args, **kwargs):
+        """带额外重试的调用包装，应对 529 过载。"""
+        import asyncio
+        import random
+
+        last_err = None
+        for attempt in range(3):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                err_str = str(e)
+                if "529" in err_str or "overloaded" in err_str:
+                    last_err = e
+                    wait = (2**attempt) + random.uniform(1, 3)
+                    print(f"[llm] 529 过载，等待 {wait:.1f}s 后重试 ({attempt + 1}/3)")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+        raise last_err
+
     async def chat(self, system, user, temperature=None, max_tokens=4096):
-        kwargs: dict = {
-            "model": self._model,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-            "max_tokens": max_tokens,
-        }
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+        async def _do():
+            kwargs: dict = {
+                "model": self._model,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+                "max_tokens": max_tokens,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
+
+        return await self._call_with_retry(_do)
 
     async def chat_with_context(
         self, system, context, user, temperature=None, max_tokens=4096
     ):
-        kwargs: dict = {
-            "model": self._model,
-            "system": system,
-            "messages": [
-                {"role": "user", "content": f"以下是相关上下文:\n\n{context}"},
-                {"role": "assistant", "content": "已理解上下文，请告诉我你需要什么。"},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": max_tokens,
-        }
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+        async def _do():
+            kwargs: dict = {
+                "model": self._model,
+                "system": system,
+                "messages": [
+                    {"role": "user", "content": f"以下是相关上下文:\n\n{context}"},
+                    {
+                        "role": "assistant",
+                        "content": "已理解上下文，请告诉我你需要什么。",
+                    },
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
+
+        return await self._call_with_retry(_do)
 
     async def chat_messages(self, messages, max_tokens=4096, temperature=None):
-        # Anthropic 格式: system 单独提取，messages 只含 user/assistant
-        system = ""
-        api_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system = msg["content"]
-            else:
-                api_messages.append(
-                    {
-                        "role": msg["role"],
-                        "content": msg["content"],
-                    }
-                )
+        async def _do():
+            # Anthropic 格式: system 单独提取，messages 只含 user/assistant
+            system = ""
+            api_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system = msg["content"]
+                else:
+                    api_messages.append(
+                        {
+                            "role": msg["role"],
+                            "content": msg["content"],
+                        }
+                    )
 
-        kwargs: dict = {
-            "model": self._model,
-            "messages": api_messages,
-            "max_tokens": max_tokens,
-        }
-        if system:
-            kwargs["system"] = system
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        resp = await self._client.messages.create(**kwargs)
-        return self._extract_text(resp)
+            kwargs: dict = {
+                "model": self._model,
+                "messages": api_messages,
+                "max_tokens": max_tokens,
+            }
+            if system:
+                kwargs["system"] = system
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = await self._client.messages.create(**kwargs)
+            return self._extract_text(resp)
+
+        return await self._call_with_retry(_do)
 
     @staticmethod
     def _extract_text(resp) -> str:
