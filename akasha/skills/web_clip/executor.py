@@ -261,30 +261,38 @@ class WebClipExecutor:
     async def save(
         self, url: str, docs_dir: Path | None = None, category: str = "articles"
     ) -> str:
-        """提取网页正文并保存为 wiki 页面。返回页面路径。"""
+        """提取网页正文 → LLM 深度整理 → 保存为 wiki 页面。返回页面路径。"""
         url = _unwrap_url(url)
         page = await self._fetch_and_extract(url)
 
         today = date.today().isoformat()
         safe_title = (
-            re.sub(r"[^\w\-]", "-", page.title.lower())[:60].strip("-") or "web-clip"
+            re.sub(r"[^\w\-]", "-", page.title.lower())[:40].strip("-") or "web-clip"
         )
+        display_title = page.title if len(page.title) <= 30 else page.title[:27] + "..."
         filename = f"{safe_title}.md"
         rel_path = f"wiki/{category}/{filename}"
 
+        # LLM 深度整理
+        analysis = await self._analyze_content(page)
+
         content = (
             f"---\n"
-            f'title: "{page.title}"\n'
+            f'title: "{display_title}"\n'
             f"tags: [web-clip, {page.domain}]\n"
             f'source: "{page.url}"\n'
             f"created: {today}\n"
             f"updated: {today}\n"
-            f"status: seedling\n"
+            f"status: {'developing' if analysis else 'seedling'}\n"
             f"---\n\n"
-            f"# {page.title}\n\n"
-            f"> 来源: [{page.url}]({page.url})\n\n"
-            f"{page.content}\n"
+            f"# {display_title}\n\n"
+            f"> 来源: [{page.domain}]({page.url})\n\n"
         )
+
+        if analysis:
+            content += analysis + "\n"
+        else:
+            content += page.content + "\n"
 
         if docs_dir:
             filepath = docs_dir / rel_path
@@ -292,6 +300,56 @@ class WebClipExecutor:
             filepath.write_text(content, encoding="utf-8")
 
         return rel_path
+
+    async def _analyze_content(self, page) -> str:
+        """用 LLM 深度整理网页内容，生成结构化知识文章。"""
+        try:
+            from akasha import _get_llm_client
+
+            llm = _get_llm_client()
+            if llm is None:
+                return ""
+
+            system_prompt = (
+                "你是一位专业的知识写作大师，擅长技术文章、概念解析、行业分析等。\n"
+                "用户给你一篇网页文章的原文（这是原始素材），"
+                "你需要深度理解内容，撰写一篇高质量的知识文章。\n\n"
+                "## 写作要求\n"
+                "1. 直接输出 Markdown 内容，不要输出 frontmatter\n"
+                "2. 用 ## 开头的章节组织内容\n"
+                "3. 必须包含以下章节：\n"
+                "   - ## 内容概述（1-3 句话总结核心观点）\n"
+                "   - ## 核心观点（提炼关键论点，每个展开 2-3 句解释）\n"
+                "   - ## 深度解析（按逻辑重新组织，用你的理解重新阐述，"
+                "保留关键细节、案例和代码）\n"
+                "   - ## 实践启示（读者可以学到什么，如何应用）\n"
+                "   - ## 相关概念（涉及的概念/工具/技术/人物/公司，"
+                "每个用 [[双链]] 格式）\n"
+                "4. 如果有代码或命令，用代码块格式保留\n"
+                "5. **不要**原样复制原文，要深度整理和重新表述\n"
+                "6. [[双链]] 要覆盖所有关键概念、人物、公司、产品\n"
+                "7. 用中文输出"
+            )
+
+            user_msg = (
+                f"## 文章信息\n"
+                f"- 标题: {page.title}\n"
+                f"- 来源: {page.url}\n\n"
+                f"## 原文内容\n\n{page.content[:30000]}\n\n"
+                f"请深度整理为知识文章。"
+            )
+
+            return await llm.chat(
+                system=system_prompt,
+                user=user_msg,
+                max_tokens=8192,
+                temperature=0.3,
+            )
+        except Exception as e:
+            import sys as _sys
+
+            print(f"[web_clip] LLM 分析失败: {e}", file=_sys.stderr)
+            return ""
 
     async def _fetch_and_extract(self, url: str) -> WebPage:
         """获取 HTML 并提取正文。"""
