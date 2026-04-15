@@ -119,7 +119,7 @@ class AnthropicClient(LLMClient):
             api_key=config.llm_api_key,
             base_url=config.llm_base_url_resolved,
             timeout=120.0,
-            max_retries=3,
+            max_retries=8,
         )
         self._model = config.llm_model_resolved
 
