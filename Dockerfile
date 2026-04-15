@@ -32,6 +32,8 @@ ENV AKASHA_VAULT_PATH="/data/akasha"
 ENV AKASHA_CHROMA_DIR="/data/chroma"
 # Docker 里 site serve 需要监听 0.0.0.0
 ENV AKASHA_SITE_HOST="0.0.0.0"
+# HuggingFace 模型缓存持久化到 /data
+ENV HF_HOME="/data/hf_cache"
 
 VOLUME ["/data"]
 
