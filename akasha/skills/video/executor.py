@@ -288,7 +288,31 @@ class VideoExecutor:
             filepath.parent.mkdir(parents=True, exist_ok=True)
             filepath.write_text(content, encoding="utf-8")
 
+            # 追加 log.md
+            self._append_log(docs_dir, info, rel_path)
+
         return rel_path
+
+    @staticmethod
+    def _append_log(docs_dir: Path, info, rel_path: str) -> None:
+        """追加操作日志到 log.md。"""
+        from datetime import date as _date
+
+        log_path = docs_dir / "log.md"
+        today = _date.today().isoformat()
+        entry = (
+            f"\n## {today}\n"
+            f"- **video_to_wiki** [{info.title}]({rel_path})\n"
+            f"  - 平台: {info.platform}, 作者: {info.author}\n"
+        )
+        if log_path.exists():
+            existing = log_path.read_text(encoding="utf-8")
+            log_path.write_text(existing + entry, encoding="utf-8")
+        else:
+            log_path.write_text(
+                f"# 操作日志\n\n> Append-only. 每次操作自动追加。\n{entry}",
+                encoding="utf-8",
+            )
 
     async def _transcribe_video(self, video_path: Path) -> str:
         """从视频中提取音频并转写为文字。"""

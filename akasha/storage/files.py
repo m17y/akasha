@@ -121,11 +121,17 @@ class FileStore:
         return full_path
 
     def append_file(self, file_path: str, content: str) -> None:
-        """追加内容到文件（用于 log.md 等）。"""
+        """追加内容到文件（用于 log.md 等）。文件不存在则创建。"""
         full_path = self.config.docs_dir / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
         if full_path.exists():
             existing = full_path.read_text(encoding="utf-8")
             full_path.write_text(existing + content, encoding="utf-8")
+        else:
+            full_path.write_text(
+                f"# 操作日志\n\n> Append-only. 每次操作自动追加。\n{content}",
+                encoding="utf-8",
+            )
 
     # ── 列出 ──
 
