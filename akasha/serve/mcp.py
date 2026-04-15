@@ -295,6 +295,30 @@ def _start_agent():
     print(vault.status_formatted())
     print()
 
+    # LLM 连通性检查
+    if vault.config.llm_configured:
+        print("--- LLM 连通性检查 ---")
+        try:
+            import asyncio
+            from ..llm import create_llm_client
+
+            llm = create_llm_client(vault.config)
+
+            async def _check():
+                return await llm.chat(
+                    system="回复 OK 即可",
+                    user="ping",
+                    max_tokens=10,
+                )
+
+            result = asyncio.run(_check())
+            print(f"  LLM 响应:   {result.strip()[:50]}")
+            print(f"  状态:       连通 ✓")
+        except Exception as e:
+            print(f"  状态:       失败 ✗")
+            print(f"  错误:       {type(e).__name__}: {e}")
+        print()
+
     channels_started = []
 
     # 飞书通道：检测到 AKASHA_FEISHU_APP_ID 自动启用
