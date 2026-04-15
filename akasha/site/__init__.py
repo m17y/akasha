@@ -79,11 +79,34 @@ def main():
     if cmd == "deploy":
         _deploy(cfg, yml_path)
     elif cmd == "serve":
-        # serve 模式：后台定期刷新 mkdocs.yml（新页面自动出现在导航中）
+        import signal
         import threading
         import time
 
-        def _refresh_config():
+        host = os.getenv("AKASHA_SITE_HOST", "127.0.0.1")
+        mkdocs_cmd = [
+            sys.executable,
+            "-m",
+            "mkdocs",
+            "serve",
+            "-f",
+            str(yml_path),
+            "-a",
+            f"{host}:8800",
+        ]
+
+        # 用可替换的进程对象管理 mkdocs serve
+        _lock = threading.Lock()
+        _proc = [None]  # 用列表包装以便在闭包里修改
+
+        def _start_mkdocs():
+            with _lock:
+                if _proc[0] and _proc[0].poll() is None:
+                    _proc[0].terminate()
+                    _proc[0].wait(timeout=5)
+                _proc[0] = subprocess.Popen(mkdocs_cmd)
+
+        def _refresh_loop():
             while True:
                 time.sleep(30)
                 try:
@@ -102,25 +125,29 @@ def main():
                         ),
                         encoding="utf-8",
                     )
+                    # 重启 mkdocs serve 以加载新内容
+                    _start_mkdocs()
                 except Exception:
                     pass
 
-        refresh_thread = threading.Thread(target=_refresh_config, daemon=True)
+        print(f"url:        http://{host}:8800")
+        _start_mkdocs()
+
+        refresh_thread = threading.Thread(target=_refresh_loop, daemon=True)
         refresh_thread.start()
 
-        host = os.getenv("AKASHA_SITE_HOST", "127.0.0.1")
-        mkdocs_cmd = [
-            sys.executable,
-            "-m",
-            "mkdocs",
-            "serve",
-            "-f",
-            str(yml_path),
-            "-a",
-            f"{host}:8800",
-        ]
-        print(f"url:        http://{host}:8800")
-        subprocess.run(mkdocs_cmd, check=True)
+        # 主线程等待 mkdocs 进程
+        try:
+            while True:
+                with _lock:
+                    proc = _proc[0]
+                if proc:
+                    proc.wait()
+                time.sleep(1)
+        except KeyboardInterrupt:
+            with _lock:
+                if _proc[0] and _proc[0].poll() is None:
+                    _proc[0].terminate()
     else:
         mkdocs_cmd = [sys.executable, "-m", "mkdocs", cmd, "-f", str(yml_path)]
         subprocess.run(mkdocs_cmd, check=True)
