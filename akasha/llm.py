@@ -119,7 +119,7 @@ class AnthropicClient(LLMClient):
             api_key=config.llm_api_key,
             base_url=config.llm_base_url_resolved,
             timeout=120.0,
-            max_retries=10,
+            max_retries=3,
         )
         self._model = config.llm_model_resolved
 
@@ -129,15 +129,15 @@ class AnthropicClient(LLMClient):
         import random
 
         last_err = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
                 err_str = str(e)
                 if "529" in err_str or "overloaded" in err_str:
                     last_err = e
-                    wait = (2**attempt) + random.uniform(1, 3)
-                    print(f"[llm] 529 过载，等待 {wait:.1f}s 后重试 ({attempt + 1}/3)")
+                    wait = 5 + random.uniform(3, 10)
+                    print(f"[llm] 529 过载，等待 {wait:.0f}s 后重试 ({attempt + 1}/2)")
                     await asyncio.sleep(wait)
                 else:
                     raise
