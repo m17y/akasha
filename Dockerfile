@@ -11,11 +11,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# 先复制依赖文件，利用缓存
+# 创建 venv，先装依赖（利用 Docker 层缓存）
 COPY pyproject.toml ./
-RUN uv venv /app/.venv && uv pip install --python /app/.venv/bin/python .
+RUN uv venv /app/.venv && \
+    uv pip install --python /app/.venv/bin/python \
+    chromadb pyyaml openai anthropic httpx mkdocs-material lark-oapi uvicorn starlette "mcp>=1.25.0"
 
-# 复制项目代码
+# 复制项目代码并安装
 COPY . .
 RUN uv pip install --python /app/.venv/bin/python -e .
 

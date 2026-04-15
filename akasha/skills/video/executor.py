@@ -310,7 +310,7 @@ class VideoExecutor:
     ) -> str:
         """用 LLM 分析转写内容，生成结构化知识文档，并创建概念/实体页面。"""
         try:
-            from ...__init__ import _get_llm_client
+            from akasha import _get_llm_client
 
             llm = _get_llm_client()
             if llm is None:

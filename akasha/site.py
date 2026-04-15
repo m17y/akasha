@@ -262,15 +262,28 @@ def _build_wikilink_map(docs_dir: Path) -> dict[str, str]:
 
 
 def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
-    """把 docs/ 下所有 md 文件中的 [[xxx]] 替换为 [xxx](实际路径)。"""
+    """把 docs/ 下所有 md 文件中的 [[xxx]] 替换为 [xxx](实际路径)。
+
+    注意：不修改源文件，而是写到 _build/ 临时目录。mkdocs 构建时使用 _build/ 作为 docs_dir。
+    如果没有 [[双链]]，则不复制文件（节省磁盘）。
+    """
     import re
+    import shutil
 
     total_replaced = 0
     wiki_dir = docs_dir / "wiki"
     if not wiki_dir.exists():
         return 0
 
-    for md_file in wiki_dir.rglob("*.md"):
+    # 创建构建用的临时目录（与 docs 平级）
+    build_dir = docs_dir.parent / "_build_docs"
+    # 每次全量复制源文件到 build 目录
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+    shutil.copytree(docs_dir, build_dir)
+
+    build_wiki_dir = build_dir / "wiki"
+    for md_file in build_wiki_dir.rglob("*.md"):
         text = md_file.read_text(encoding="utf-8")
         file_dir = md_file.parent
 
@@ -281,15 +294,15 @@ def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
             target = link_map.get(name) or link_map.get(name.lower())
             if target:
                 # 计算从当前文件到目标的相对路径
-                target_path = docs_dir / target
+                target_path = build_dir / target
                 try:
                     rel = os.path.relpath(target_path, file_dir)
                 except ValueError:
                     rel = target
                 total_replaced += 1
                 return f"[{name}]({rel})"
-            # 找不到目标，保留原样但标记为待创建
-            return f"**{name}**"
+            # 找不到目标，保留 [[双链]] 原样
+            return m.group(0)
 
         new_text = re.sub(r"\[\[([^\]]+)\]\]", _replace, text)
         if new_text != text:
@@ -421,17 +434,23 @@ def main():
         print("  deploy  发布到 GitHub Pages")
         sys.exit(1)
 
-    # 预处理：双链渲染 + 生成图谱页面
+    # 预处理：双链渲染（写到 _build_docs，不修改源文件）+ 生成图谱页面（写到源文件，这是新内容）
     link_map = _build_wikilink_map(cfg.docs_dir)
-    replaced = _resolve_wikilinks(cfg.docs_dir, link_map)
     graph_generated = _generate_graph_page(cfg.docs_dir, link_map)
+    replaced = _resolve_wikilinks(cfg.docs_dir, link_map)
     if replaced:
         print(f"双链:       {replaced} 个 [[wikilink]] 已渲染")
     if graph_generated:
         print(f"图谱:       wiki/graph.md 已生成")
 
+    # mkdocs 使用 _build_docs 目录（双链已替换），如果不存在则用原 docs
+    build_docs_dir = cfg.docs_dir.parent / "_build_docs"
+    actual_docs_dir = build_docs_dir if build_docs_dir.exists() else cfg.docs_dir
+
     # 生成 mkdocs.yml 到 vault 根目录
     mkdocs_config = _generate_mkdocs_config(cfg)
+    mkdocs_config["docs_dir"] = str(actual_docs_dir)
+    mkdocs_config["nav"] = _build_nav(actual_docs_dir)
     yml_path = cfg.vault_path / "mkdocs.yml"
     yml_path.write_text(
         yaml.dump(
@@ -457,9 +476,11 @@ def main():
                 time.sleep(30)
                 try:
                     new_link_map = _build_wikilink_map(cfg.docs_dir)
-                    _resolve_wikilinks(cfg.docs_dir, new_link_map)
                     _generate_graph_page(cfg.docs_dir, new_link_map)
+                    _resolve_wikilinks(cfg.docs_dir, new_link_map)
                     new_config = _generate_mkdocs_config(cfg)
+                    new_config["docs_dir"] = str(actual_docs_dir)
+                    new_config["nav"] = _build_nav(actual_docs_dir)
                     yml_path.write_text(
                         yaml.dump(
                             new_config,
