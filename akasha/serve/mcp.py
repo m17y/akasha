@@ -286,6 +286,7 @@ def main():
 def _start_agent():
     """启动 Agent — 自动检测已配置的通道并启用。"""
     import os
+    import sys
     import threading
 
     vault.init()
@@ -308,16 +309,26 @@ def _start_agent():
     if channels_started:
         print(f"通道:       {', '.join(channels_started)}")
         print()
-        # 有后台通道在跑，进入等待状态
-        # 同时提供 TUI 交互
-        from .cli import _repl
 
-        print("Agent 已启动，进入交互模式（Ctrl+C 退出）")
-        print()
-        try:
-            _repl(vault)
-        except KeyboardInterrupt:
-            print("\n再见。")
+        # 检测是否有交互式终端
+        if sys.stdin.isatty():
+            # 有终端，进入交互模式
+            from .cli import _repl
+
+            print("Agent 已启动，进入交互模式（Ctrl+C 退出）")
+            print()
+            try:
+                _repl(vault)
+            except KeyboardInterrupt:
+                print("\n再见。")
+        else:
+            # 无终端（Docker / 后台运行），保持进程存活
+            print("Agent 已启动（后台模式，Ctrl+C 退出）")
+            print()
+            try:
+                threading.Event().wait()
+            except KeyboardInterrupt:
+                print("\n再见。")
     else:
         # 没有配置任何通道，直接进入 TUI
         from .cli import _repl
