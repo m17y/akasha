@@ -7,6 +7,26 @@ from pathlib import Path
 from .mkdocs_config import _extract_title
 
 
+def _ensure_g6_js(docs_dir: Path) -> None:
+    """确保 G6 JS 文件存在于 docs/assets/js/ 下。"""
+    js_dir = docs_dir / "assets" / "js"
+    js_file = js_dir / "g6.min.js"
+    if js_file.exists():
+        return
+
+    js_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        import urllib.request
+
+        print("[graph] 下载 AntV G6...")
+        urllib.request.urlretrieve(
+            "https://unpkg.com/@antv/g6@4/dist/g6.min.js",
+            str(js_file),
+        )
+    except Exception as e:
+        print(f"[graph] G6 下载失败: {e}，图谱可能无法显示")
+
+
 def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
     """扫描所有 wiki 页面，生成 AntV G6 交互式知识图谱页面。"""
     import hashlib
@@ -16,6 +36,8 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
     wiki_dir = docs_dir / "wiki"
     if not wiki_dir.exists():
         return False
+
+    _ensure_g6_js(docs_dir)
 
     # 收集节点和边
     nodes: dict[str, dict] = {}  # id → {name, category, url}
@@ -181,7 +203,7 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         "#node-detail p { font-size: 12px; color: #888; margin: 0 0 8px; }\n"
         "#node-detail a { font-size: 12px; }\n"
         "</style>\n\n"
-        '<script src="https://unpkg.com/@antv/g6@4/dist/g6.min.js"></script>\n'
+        '<script src="/assets/js/g6.min.js"></script>\n'
         "<script>\n"
         "document.addEventListener('DOMContentLoaded', function() {\n"
         "  var data = " + graph_data + ";\n"
