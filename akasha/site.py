@@ -447,13 +447,49 @@ def main():
 
     if cmd == "deploy":
         _deploy(cfg, yml_path)
+    elif cmd == "serve":
+        # serve 模式：后台定期刷新 mkdocs.yml（新页面自动出现在导航中）
+        import threading
+        import time
+
+        def _refresh_config():
+            while True:
+                time.sleep(30)
+                try:
+                    new_link_map = _build_wikilink_map(cfg.docs_dir)
+                    _resolve_wikilinks(cfg.docs_dir, new_link_map)
+                    _generate_graph_page(cfg.docs_dir, new_link_map)
+                    new_config = _generate_mkdocs_config(cfg)
+                    yml_path.write_text(
+                        yaml.dump(
+                            new_config,
+                            allow_unicode=True,
+                            default_flow_style=False,
+                            sort_keys=False,
+                        ),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+
+        refresh_thread = threading.Thread(target=_refresh_config, daemon=True)
+        refresh_thread.start()
+
+        host = os.getenv("AKASHA_SITE_HOST", "127.0.0.1")
+        mkdocs_cmd = [
+            sys.executable,
+            "-m",
+            "mkdocs",
+            "serve",
+            "-f",
+            str(yml_path),
+            "-a",
+            f"{host}:8800",
+        ]
+        print(f"url:        http://{host}:8800")
+        subprocess.run(mkdocs_cmd, check=True)
     else:
-        # 用 Python 模块调用 mkdocs（避免依赖系统 PATH 中的 mkdocs 命令）
         mkdocs_cmd = [sys.executable, "-m", "mkdocs", cmd, "-f", str(yml_path)]
-        if cmd == "serve":
-            host = os.getenv("AKASHA_SITE_HOST", "127.0.0.1")
-            mkdocs_cmd.extend(["-a", f"{host}:8800"])
-            print(f"url:        http://{host}:8800")
         subprocess.run(mkdocs_cmd, check=True)
 
 
