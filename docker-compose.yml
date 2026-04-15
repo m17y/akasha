@@ -1,15 +1,29 @@
 services:
+  # Agent 服务（飞书通道等）
   akasha:
     image: ghcr.io/m17y/akasha:latest
-    # build: .  # 本地构建时取消注释此行，注释上面的 image
     container_name: akasha
     restart: unless-stopped
+    command: ["akasha", "start"]
     volumes:
       - akasha-data:/data
     env_file:
       - .env
     environment:
-      # ── 数据目录（容器内固定路径）──
+      - AKASHA_VAULT_PATH=/data/akasha
+      - AKASHA_CHROMA_DIR=/data/chroma
+
+  # Wiki 网站服务
+  akasha-site:
+    image: ghcr.io/m17y/akasha:latest
+    container_name: akasha-site
+    restart: unless-stopped
+    command: ["akasha", "site", "serve"]
+    volumes:
+      - akasha-data:/data
+    env_file:
+      - .env
+    environment:
       - AKASHA_VAULT_PATH=/data/akasha
       - AKASHA_CHROMA_DIR=/data/chroma
     ports:
