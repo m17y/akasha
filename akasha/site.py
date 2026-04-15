@@ -409,7 +409,7 @@ def main():
 
     if not cfg.vault_path.exists():
         print(f"vault 不存在: {cfg.vault_path}")
-        print("请先设置 KNOWLEDGE_VAULT_PATH 并运行 akasha 初始化")
+        print("请先设置 AKASHA_VAULT_PATH 并运行 akasha init")
         sys.exit(1)
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
