@@ -242,32 +242,27 @@ class Vault:
             if "docs_dir" in sig.parameters:
                 kwargs["docs_dir"] = self.config.docs_dir
 
-        # 记录执行前的 wiki 文件列表（用于检测新页面）
-        wiki_before = set()
-        if self.config.docs_dir.exists():
-            wiki_before = (
-                {
-                    str(p.relative_to(self.config.docs_dir))
-                    for p in (self.config.docs_dir / "wiki").rglob("*.md")
-                }
-                if (self.config.docs_dir / "wiki").exists()
-                else set()
-            )
+        # 记录执行前的 wiki 文件 mtime（用于检测新增和修改）
+        wiki_before: dict[str, float] = {}
+        if self.config.docs_dir.exists() and (self.config.docs_dir / "wiki").exists():
+            for p in (self.config.docs_dir / "wiki").rglob("*.md"):
+                rel = str(p.relative_to(self.config.docs_dir))
+                wiki_before[rel] = p.stat().st_mtime
 
         result = await action.handler(**kwargs)
 
-        # 检测新创建的 wiki 页面
-        wiki_after = set()
+        # 检测新增或修改的 wiki 页面
+        changed_pages = set()
         if self.config.docs_dir.exists() and (self.config.docs_dir / "wiki").exists():
-            wiki_after = {
-                str(p.relative_to(self.config.docs_dir))
-                for p in (self.config.docs_dir / "wiki").rglob("*.md")
-            }
-        new_pages = wiki_after - wiki_before
+            for p in (self.config.docs_dir / "wiki").rglob("*.md"):
+                rel = str(p.relative_to(self.config.docs_dir))
+                old_mtime = wiki_before.get(rel)
+                if old_mtime is None or p.stat().st_mtime > old_mtime:
+                    changed_pages.add(rel)
 
-        # post_save hooks
-        if new_pages:
-            self._on_pages_created(new_pages, tool_name)
+        # post_save hooks（新增或修改都触发）
+        if changed_pages:
+            self._on_pages_created(changed_pages, tool_name)
 
         if isinstance(result, str):
             return result
