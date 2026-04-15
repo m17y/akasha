@@ -234,9 +234,13 @@ class Vault:
             available = ", ".join(self.skill_registry.actions.keys())
             return f"未知的 skill tool: {tool_name}。可用: {available or '(无)'}"
 
-        # 注入 docs_dir 给需要它的 handler
+        # 注入 docs_dir 给需要它的 handler（仅当方法签名包含该参数时）
+        import inspect
+
         if "docs_dir" not in kwargs and self.config.docs_dir.exists():
-            kwargs["docs_dir"] = self.config.docs_dir
+            sig = inspect.signature(action.handler)
+            if "docs_dir" in sig.parameters:
+                kwargs["docs_dir"] = self.config.docs_dir
 
         result = await action.handler(**kwargs)
 
