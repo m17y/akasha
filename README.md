@@ -47,8 +47,25 @@ rm -rf ~/akasha           # 知识库内容
 
 ### pm2 部署（后台常驻）
 
+环境变量统一在 `~/.zshrc`（或 `~/.bashrc`）中配置，ecosystem.config.js 通过 `process.env` 读取，不硬编码敏感信息。
+
 ```bash
-# 创建 ecosystem 配置（按需修改环境变量）
+# 1. 在 ~/.zshrc 中配置环境变量
+cat >> ~/.zshrc << 'EOF'
+
+# Akasha 环境变量
+export AKASHA_VAULT_PATH="$HOME/akasha"
+export AKASHA_LLM_PROVIDER="anthropic"
+export AKASHA_LLM_API_KEY="sk-xxx"
+export AKASHA_LLM_BASE_URL="https://api.minimaxi.com/anthropic"
+export AKASHA_LLM_MODEL="MiniMax-M2.7"
+export AKASHA_FEISHU_APP_ID="cli_xxx"
+export AKASHA_FEISHU_APP_SECRET="xxx"
+export AKASHA_SITE_REPO="https://github.com/user/user.github.io.git"
+EOF
+source ~/.zshrc
+
+# 2. 创建 ecosystem 配置（从环境变量读取，无需修改）
 cat > ~/akasha/ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [{
@@ -57,19 +74,20 @@ module.exports = {
     args: "start",
     interpreter: "none",
     env: {
-      AKASHA_VAULT_PATH: process.env.HOME + "/akasha",
-      AKASHA_LLM_PROVIDER: "anthropic",
-      AKASHA_LLM_API_KEY: "sk-xxx",
-      AKASHA_LLM_BASE_URL: "https://api.minimaxi.com/anthropic",
-      AKASHA_LLM_MODEL: "MiniMax-M2.7",
-      AKASHA_FEISHU_APP_ID: "cli_xxx",
-      AKASHA_FEISHU_APP_SECRET: "xxx",
+      AKASHA_VAULT_PATH: process.env.AKASHA_VAULT_PATH,
+      AKASHA_LLM_PROVIDER: process.env.AKASHA_LLM_PROVIDER,
+      AKASHA_LLM_API_KEY: process.env.AKASHA_LLM_API_KEY,
+      AKASHA_LLM_BASE_URL: process.env.AKASHA_LLM_BASE_URL,
+      AKASHA_LLM_MODEL: process.env.AKASHA_LLM_MODEL,
+      AKASHA_FEISHU_APP_ID: process.env.AKASHA_FEISHU_APP_ID,
+      AKASHA_FEISHU_APP_SECRET: process.env.AKASHA_FEISHU_APP_SECRET,
+      AKASHA_SITE_REPO: process.env.AKASHA_SITE_REPO,
     },
   }],
 };
 EOF
 
-# 启动
+# 3. 启动
 pm2 start ~/akasha/ecosystem.config.js
 
 # 常用命令

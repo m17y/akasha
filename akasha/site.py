@@ -445,12 +445,80 @@ def main():
     print(f"site:       {cfg.site_dir}")
     print(f"mkdocs.yml: {yml_path}")
 
-    # 用 Python 模块调用 mkdocs（避免依赖系统 PATH 中的 mkdocs 命令）
-    mkdocs_cmd = [sys.executable, "-m", "mkdocs", cmd, "-f", str(yml_path)]
-    if cmd == "serve":
-        mkdocs_cmd.extend(["-a", "127.0.0.1:8800"])
-        print(f"url:        http://127.0.0.1:8800")
+    if cmd == "deploy":
+        _deploy(cfg, yml_path)
+    else:
+        # 用 Python 模块调用 mkdocs（避免依赖系统 PATH 中的 mkdocs 命令）
+        mkdocs_cmd = [sys.executable, "-m", "mkdocs", cmd, "-f", str(yml_path)]
+        if cmd == "serve":
+            mkdocs_cmd.extend(["-a", "127.0.0.1:8800"])
+            print(f"url:        http://127.0.0.1:8800")
+        subprocess.run(mkdocs_cmd, check=True)
+
+
+def _deploy(cfg, yml_path: Path):
+    """构建站点并自动发布到 GitHub Pages。"""
+    from datetime import datetime
+
+    site_repo = cfg.site_repo
+    if not site_repo:
+        print("错误: 未配置 AKASHA_SITE_REPO")
+        print("请设置环境变量，例如:")
+        print('  export AKASHA_SITE_REPO="https://github.com/user/user.github.io.git"')
+        sys.exit(1)
+
+    site_dir = cfg.site_dir
+
+    # 1. 构建
+    print(">>> 构建站点...")
+    mkdocs_cmd = [sys.executable, "-m", "mkdocs", "build", "-f", str(yml_path)]
     subprocess.run(mkdocs_cmd, check=True)
+
+    # 2. 初始化 git（如果还没有）
+    git_dir = site_dir / ".git"
+    if not git_dir.exists():
+        print(">>> 初始化 git...")
+        subprocess.run(["git", "init"], cwd=site_dir, check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", site_repo],
+            cwd=site_dir,
+            check=True,
+        )
+    else:
+        # 确保 remote 地址正确
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=site_dir,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or result.stdout.strip() != site_repo:
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", site_repo],
+                cwd=site_dir,
+            )
+
+    # 3. 提交并推送
+    print(">>> 提交并推送...")
+    subprocess.run(["git", "add", "."], cwd=site_dir, check=True)
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    result = subprocess.run(
+        ["git", "commit", "-m", f"deploy wiki {ts}"],
+        cwd=site_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 and "nothing to commit" in result.stdout:
+        print(">>> 没有变更，跳过推送")
+        return
+
+    subprocess.run(
+        ["git", "push", "-u", "origin", "main", "--force"],
+        cwd=site_dir,
+        check=True,
+    )
+    print(f">>> 部署完成!")
 
 
 if __name__ == "__main__":

@@ -78,6 +78,9 @@ class Config:
     max_chunk_store_length: int = 8000
     batch_size: int = 100
 
+    # ── GitHub Pages 部署 ──
+    site_repo: str = field(default_factory=lambda: os.getenv("AKASHA_SITE_REPO", ""))
+
     # ── 展示 ──
     max_display_length: int = 500
     max_read_length: int = 10000
