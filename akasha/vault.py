@@ -242,15 +242,94 @@ class Vault:
             if "docs_dir" in sig.parameters:
                 kwargs["docs_dir"] = self.config.docs_dir
 
+        # 记录执行前的 wiki 文件列表（用于检测新页面）
+        wiki_before = set()
+        if self.config.docs_dir.exists():
+            wiki_before = (
+                {
+                    str(p.relative_to(self.config.docs_dir))
+                    for p in (self.config.docs_dir / "wiki").rglob("*.md")
+                }
+                if (self.config.docs_dir / "wiki").exists()
+                else set()
+            )
+
         result = await action.handler(**kwargs)
 
-        # 某些操作后需要刷新索引（生成了 wiki 页面的）
-        if "wiki" in tool_name or "save" in tool_name:
-            self.index.refresh()
+        # 检测新创建的 wiki 页面
+        wiki_after = set()
+        if self.config.docs_dir.exists() and (self.config.docs_dir / "wiki").exists():
+            wiki_after = {
+                str(p.relative_to(self.config.docs_dir))
+                for p in (self.config.docs_dir / "wiki").rglob("*.md")
+            }
+        new_pages = wiki_after - wiki_before
+
+        # post_save hooks
+        if new_pages:
+            self._on_pages_created(new_pages, tool_name)
 
         if isinstance(result, str):
             return result
         return str(result)
+
+    def _on_pages_created(self, new_pages: set[str], tool_name: str) -> None:
+        """新页面创建后的统一 hook。"""
+        from datetime import date
+
+        docs_dir = self.config.docs_dir
+        today = date.today().isoformat()
+
+        # Hook 1: 追加 log.md
+        log_entries = [f"\n## {today}"]
+        for page in sorted(new_pages):
+            log_entries.append(f"- **{tool_name}** → {page}")
+        self.files.append_file("log.md", "\n".join(log_entries) + "\n")
+
+        # Hook 2: 从新文章中提取 concepts/entities（扫描 [[双链]]）
+        import re
+
+        for page in new_pages:
+            if not page.startswith("wiki/articles/"):
+                continue
+            full_path = docs_dir / page
+            if not full_path.exists():
+                continue
+            text = full_path.read_text(encoding="utf-8")
+
+            for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
+                ref_name = m.group(1).strip()
+                if not ref_name:
+                    continue
+                safe_name = re.sub(r"[^\w\-]", "-", ref_name.lower())[:60].strip("-")
+                if not safe_name:
+                    continue
+
+                # 检查是否已存在
+                for category in ("concepts", "entities"):
+                    if (docs_dir / f"wiki/{category}/{safe_name}.md").exists():
+                        break
+                else:
+                    # 默认放 concepts（LLM 分析后可能会调整）
+                    filepath = docs_dir / f"wiki/concepts/{safe_name}.md"
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    if not filepath.exists():
+                        title = ref_name
+                        page_content = (
+                            f"---\n"
+                            f'title: "{title}"\n'
+                            f"tags: [concept]\n"
+                            f"created: {today}\n"
+                            f"status: seedling\n"
+                            f"---\n\n"
+                            f"# {title}\n\n"
+                            f"*自动从 [[{page.split('/')[-1].replace('.md', '')}]] 中提取。*\n\n"
+                            f"## 简介\n\n（待补充）\n"
+                        )
+                        filepath.write_text(page_content, encoding="utf-8")
+
+        # Hook 3: 刷新索引
+        self.index.refresh()
 
     def get_skill_prompts(self) -> dict[str, str]:
         """获取所有 skill 的 prompt（skill.md 内容），供 Agent 使用。"""
