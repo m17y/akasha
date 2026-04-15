@@ -118,30 +118,26 @@ class AnthropicClient(LLMClient):
         self._client = AsyncAnthropic(
             api_key=config.llm_api_key,
             base_url=config.llm_base_url_resolved,
-            timeout=120.0,
-            max_retries=3,
+            timeout=60.0,
+            max_retries=2,
         )
         self._model = config.llm_model_resolved
 
     async def _call_with_retry(self, func, *args, **kwargs):
-        """带额外重试的调用包装，应对 529 过载。"""
+        """带重试的调用包装，应对 529 过载。只重试 1 次，避免请求风暴。"""
         import asyncio
         import random
 
-        last_err = None
-        for attempt in range(2):
-            try:
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            if "529" in err_str or "overloaded" in err_str:
+                wait = 3 + random.uniform(2, 5)
+                print(f"[llm] 529 过载，等待 {wait:.0f}s 后重试")
+                await asyncio.sleep(wait)
                 return await func(*args, **kwargs)
-            except Exception as e:
-                err_str = str(e)
-                if "529" in err_str or "overloaded" in err_str:
-                    last_err = e
-                    wait = 5 + random.uniform(3, 10)
-                    print(f"[llm] 529 过载，等待 {wait:.0f}s 后重试 ({attempt + 1}/2)")
-                    await asyncio.sleep(wait)
-                else:
-                    raise
-        raise last_err
+            raise
 
     async def chat(self, system, user, temperature=None, max_tokens=4096):
         async def _do():
