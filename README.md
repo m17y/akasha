@@ -27,6 +27,8 @@ akasha start
 
 ## 安装与更新
 
+### uv 安装（推荐）
+
 ```bash
 # 首次安装
 uv tool install --from git+https://github.com/m17y/akasha akasha
@@ -44,6 +46,40 @@ uv tool uninstall akasha
 rm -rf ~/.akasha          # 向量数据库 + 会话记忆
 rm -rf ~/akasha           # 知识库内容
 ```
+
+### Docker 安装
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/m17y/akasha.git
+cd akasha
+
+# 2. 创建 .env 文件配置环境变量
+cat > .env << 'EOF'
+AKASHA_LLM_PROVIDER=anthropic
+AKASHA_LLM_API_KEY=sk-xxx
+AKASHA_LLM_BASE_URL=https://api.minimaxi.com/anthropic
+AKASHA_LLM_MODEL=MiniMax-M2.7
+AKASHA_FEISHU_APP_ID=cli_xxx
+AKASHA_FEISHU_APP_SECRET=xxx
+AKASHA_SITE_REPO=https://github.com/user/user.github.io.git
+EOF
+
+# 3. 启动
+docker compose up -d
+
+# 常用命令
+docker compose logs -f          # 查看日志
+docker compose restart          # 重启
+docker compose down             # 停止
+docker compose up -d --build    # 重新构建并启动
+
+# 进入容器执行命令
+docker compose exec akasha akasha status
+docker compose exec akasha akasha site deploy
+```
+
+数据持久化在 Docker volume `akasha-data` 中，包含知识库内容和向量数据库。
 
 ### pm2 部署（后台常驻）
 
@@ -165,6 +201,7 @@ akasha> /help
 | `AKASHA_VAULT_PATH` | `~/akasha` | 知识库根目录 |
 | `AKASHA_CHROMA_DIR` | `~/.akasha/chroma` | 向量数据库目录 |
 | `AKASHA_DEFAULT_TOP_K` | `5` | 搜索默认返回条数 |
+| `AKASHA_SITE_REPO` | — (可选) | GitHub Pages 仓库地址，用于 `akasha site deploy` |
 
 ### LLM 配置
 

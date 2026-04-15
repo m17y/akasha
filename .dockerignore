@@ -1,0 +1,15 @@
+.git
+.venv
+.pytest_cache
+.mypy_cache
+.akasha
+__pycache__
+*.pyc
+*.egg-info
+dist
+build
+site
+.DS_Store
+.idea
+.vscode
+uv.lock
