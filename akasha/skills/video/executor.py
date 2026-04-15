@@ -184,8 +184,8 @@ class VideoExecutor:
         safe_title = (
             re.sub(r"[^\w\-]", "-", info.title.lower())[:40].strip("-") or "video"
         )
-        # 页面标题：最长 50 字符
-        display_title = info.title if len(info.title) <= 50 else info.title[:47] + "..."
+        # 页面标题：最长 30 字符
+        display_title = info.title if len(info.title) <= 30 else info.title[:27] + "..."
         video_filename = f"{safe_title}.mp4"
         wiki_filename = f"{safe_title}.md"
         rel_path = f"wiki/articles/{wiki_filename}"
