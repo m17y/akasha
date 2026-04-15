@@ -317,8 +317,9 @@ def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
 
 
 def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
-    """扫描所有 wiki 页面的 related/tags + [[双链]]，生成 mermaid 关联图谱页面。"""
+    """扫描所有 wiki 页面，生成 AntV G6 交互式知识图谱页面。"""
     import hashlib
+    import json
     import re
 
     wiki_dir = docs_dir / "wiki"
@@ -326,8 +327,7 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         return False
 
     # 收集节点和边
-    # node: id → {name, category}
-    nodes: dict[str, dict] = {}
+    nodes: dict[str, dict] = {}  # id → {name, category, url}
     edges: list[tuple[str, str]] = []
 
     for md_file in wiki_dir.rglob("*.md"):
@@ -336,7 +336,7 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         title = _extract_title(md_file)
         node_id = _safe_id(title)
 
-        # 根据所在目录判断类型
+        # 类型 + 页面 URL
         rel = str(md_file.relative_to(wiki_dir))
         if rel.startswith("concepts"):
             category = "concept"
@@ -347,7 +347,9 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         else:
             category = "other"
 
-        nodes[node_id] = {"name": title, "category": category}
+        # mkdocs URL: wiki/articles/xxx.md → wiki/articles/xxx/
+        url_path = str(md_file.relative_to(docs_dir)).replace(".md", "/")
+        nodes[node_id] = {"name": title, "category": category, "url": url_path}
 
         text = md_file.read_text(encoding="utf-8")
 
@@ -367,115 +369,282 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
                                 if target_id != node_id:
                                     nodes.setdefault(
                                         target_id,
-                                        {"name": item, "category": "other"},
+                                        {"name": item, "category": "other", "url": ""},
                                     )
                                     edges.append((node_id, target_id))
                     elif line.startswith("- "):
-                        # 多行 related 列表格式
                         item = line[2:].strip().strip('"').strip("'")
                         if item:
                             target_id = _safe_id(item)
                             if target_id != node_id:
                                 nodes.setdefault(
                                     target_id,
-                                    {"name": item, "category": "other"},
+                                    {"name": item, "category": "other", "url": ""},
                                 )
                                 edges.append((node_id, target_id))
 
-        # 从正文提取 [[双链]] 引用
+        # 从正文提取 [[双链]]
         for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
             ref_name = m.group(1).strip()
             ref_id = _safe_id(ref_name)
             if ref_id != node_id and ref_id:
-                nodes.setdefault(ref_id, {"name": ref_name, "category": "other"})
+                nodes.setdefault(
+                    ref_id, {"name": ref_name, "category": "other", "url": ""}
+                )
                 edges.append((node_id, ref_id))
 
     if not nodes:
         return False
 
-    # 去重边
     edges = list(set(edges))
 
-    # 只保留有连线的节点（去掉孤立节点）
-    connected_ids = set()
-    for src, dst in edges:
-        connected_ids.add(src)
-        connected_ids.add(dst)
+    # 构建 G6 数据
+    color_map = {
+        "article": "#4a9eff",
+        "concept": "#10b981",
+        "entity": "#f59e0b",
+        "other": "#6b7280",
+    }
+    size_map = {"article": 40, "concept": 30, "entity": 30, "other": 20}
 
-    # 如果没有连线，显示所有节点
-    if not connected_ids:
-        connected_ids = set(nodes.keys())
+    g6_nodes = []
+    for nid, info in nodes.items():
+        cat = info["category"]
+        label = info["name"] if len(info["name"]) <= 10 else info["name"][:8] + ".."
+        g6_nodes.append(
+            {
+                "id": nid,
+                "label": label,
+                "fullName": info["name"],
+                "category": cat,
+                "url": info.get("url", ""),
+                "size": size_map.get(cat, 20),
+                "style": {
+                    "fill": color_map.get(cat, "#6b7280"),
+                    "stroke": "#fff",
+                    "lineWidth": 2,
+                },
+                "labelCfg": {"style": {"fill": "#333", "fontSize": 11}},
+            }
+        )
 
-    # 样式映射
-    style_map = {
-        "article": "fill:#4a9eff,stroke:#2b7de9,color:#fff",
-        "concept": "fill:#10b981,stroke:#059669,color:#fff",
-        "entity": "fill:#f59e0b,stroke:#d97706,color:#fff",
-        "other": "fill:#6b7280,stroke:#4b5563,color:#fff",
+    g6_edges = [{"source": s, "target": t} for s, t in edges]
+
+    graph_data = json.dumps({"nodes": g6_nodes, "edges": g6_edges}, ensure_ascii=False)
+
+    # 按类型分组构建侧边栏数据
+    sidebar_data = {}
+    for nid, info in nodes.items():
+        cat = info["category"]
+        if cat not in sidebar_data:
+            sidebar_data[cat] = []
+        sidebar_data[cat].append(
+            {"id": nid, "name": info["name"], "url": info.get("url", "")}
+        )
+
+    sidebar_json = json.dumps(sidebar_data, ensure_ascii=False)
+
+    cat_labels = {
+        "article": "文章",
+        "concept": "概念",
+        "entity": "实体",
+        "other": "其他",
     }
 
-    # 生成 mermaid graph
-    lines = [
-        "---",
-        "hide:",
-        "  - navigation",
-        "---",
-        "",
-        "# 知识图谱",
-        "",
-        "节点颜色：",
-        '<span style="color:#4a9eff">**■ 文章**</span> · '
-        '<span style="color:#10b981">**■ 概念**</span> · '
-        '<span style="color:#f59e0b">**■ 实体**</span>',
-        "",
-        "```mermaid",
-        "graph TD",
-    ]
+    html = f"""---
+hide:
+  - navigation
+  - toc
+---
 
-    # 按类型分组输出节点
-    for nid, info in nodes.items():
-        if nid not in connected_ids:
-            continue
-        name = info["name"]
-        # 短标签：最多 12 个字符
-        display = name if len(name) <= 12 else name[:10] + ".."
-        # 转义双引号
-        display = display.replace('"', "'")
-        lines.append(f'    {nid}["{display}"]')
+# 知识图谱
 
-    lines.append("")
+<div id="graph-app">
+  <div id="sidebar">
+    <div class="legend">
+      <span class="dot" style="background:#4a9eff"></span> 文章
+      <span class="dot" style="background:#10b981"></span> 概念
+      <span class="dot" style="background:#f59e0b"></span> 实体
+    </div>
+    <div id="sidebar-list"></div>
+    <div id="node-detail" style="display:none">
+      <h3 id="detail-name"></h3>
+      <p id="detail-category"></p>
+      <a id="detail-link" href="#">查看页面 →</a>
+    </div>
+  </div>
+  <div id="graph-container"></div>
+</div>
 
-    for src, dst in edges:
-        lines.append(f"    {src} --> {dst}")
+<style>
+#graph-app {{ display: flex; height: 70vh; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin: 1em 0; }}
+#sidebar {{ width: 220px; border-right: 1px solid #e0e0e0; overflow-y: auto; padding: 12px; background: #fafafa; flex-shrink: 0; }}
+#graph-container {{ flex: 1; background: #fff; }}
+.legend {{ margin-bottom: 12px; font-size: 13px; }}
+.dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 2px; margin-left: 8px; }}
+.sidebar-group {{ margin-bottom: 12px; }}
+.sidebar-group h4 {{ margin: 4px 0; font-size: 13px; color: #666; }}
+.sidebar-item {{ padding: 4px 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.sidebar-item:hover {{ background: #e8f0fe; }}
+.sidebar-item.active {{ background: #4a9eff; color: #fff; }}
+#node-detail {{ margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd; }}
+#node-detail h3 {{ font-size: 14px; margin: 0 0 4px; }}
+#node-detail p {{ font-size: 12px; color: #888; margin: 0 0 8px; }}
+#node-detail a {{ font-size: 12px; }}
+</style>
 
-    lines.append("")
+<script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.g6-0.x/build/g6.js"></script>
+<script src="https://unpkg.com/@antv/g6@4/dist/g6.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+  var data = {graph_data};
+  var sidebarData = {sidebar_json};
+  var catLabels = {json.dumps(cat_labels, ensure_ascii=False)};
 
-    # 添加样式
-    for nid, info in nodes.items():
-        if nid not in connected_ids:
-            continue
-        cat = info["category"]
-        if cat in style_map:
-            lines.append(f"    style {nid} {style_map[cat]}")
+  var container = document.getElementById('graph-container');
+  var width = container.offsetWidth || 800;
+  var height = container.offsetHeight || 500;
 
-    lines.append("```")
-    lines.append("")
-    lines.append(f"<small>{len(connected_ids)} 个节点 · {len(edges)} 条关联</small>")
+  var graph = new G6.Graph({{
+    container: 'graph-container',
+    width: width,
+    height: height,
+    fitView: true,
+    fitViewPadding: 40,
+    animate: true,
+    modes: {{
+      default: ['drag-canvas', 'zoom-canvas', 'drag-node']
+    }},
+    layout: {{
+      type: 'force',
+      preventOverlap: true,
+      nodeSpacing: 60,
+      linkDistance: 150,
+      nodeStrength: -200,
+      edgeStrength: 0.3,
+      alphaDecay: 0.02
+    }},
+    defaultEdge: {{
+      style: {{ stroke: '#ccc', lineWidth: 1.5, endArrow: true }},
+    }},
+    nodeStateStyles: {{
+      highlight: {{ stroke: '#f59e0b', lineWidth: 3, shadowBlur: 10, shadowColor: '#f59e0b' }},
+      dim: {{ opacity: 0.3 }}
+    }},
+    edgeStateStyles: {{
+      highlight: {{ stroke: '#f59e0b', lineWidth: 2 }},
+      dim: {{ opacity: 0.15 }}
+    }}
+  }});
+
+  graph.data(data);
+  graph.render();
+
+  // 点击节点 → 高亮关联 + 显示详情
+  graph.on('node:click', function(e) {{
+    highlightNode(e.item.getID());
+  }});
+
+  // 点击画布空白 → 清除高亮
+  graph.on('canvas:click', function() {{
+    clearHighlight();
+  }});
+
+  // 双击节点 → 跳转页面
+  graph.on('node:dblclick', function(e) {{
+    var model = e.item.getModel();
+    if (model.url) window.location.href = '/' + model.url;
+  }});
+
+  function highlightNode(nodeId) {{
+    clearHighlight();
+    var item = graph.findById(nodeId);
+    if (!item) return;
+    graph.setItemState(item, 'highlight', true);
+    // 高亮相邻节点和边
+    var edges = graph.getEdges();
+    var neighborIds = new Set();
+    edges.forEach(function(edge) {{
+      var src = edge.getSource().getID();
+      var tgt = edge.getTarget().getID();
+      if (src === nodeId || tgt === nodeId) {{
+        graph.setItemState(edge, 'highlight', true);
+        neighborIds.add(src);
+        neighborIds.add(tgt);
+      }} else {{
+        graph.setItemState(edge, 'dim', true);
+      }}
+    }});
+    graph.getNodes().forEach(function(node) {{
+      var id = node.getID();
+      if (id !== nodeId && !neighborIds.has(id)) {{
+        graph.setItemState(node, 'dim', true);
+      }}
+    }});
+    // 更新详情面板
+    var model = item.getModel();
+    document.getElementById('node-detail').style.display = 'block';
+    document.getElementById('detail-name').textContent = model.fullName;
+    document.getElementById('detail-category').textContent = catLabels[model.category] || model.category;
+    var link = document.getElementById('detail-link');
+    if (model.url) {{ link.href = '/' + model.url; link.style.display = 'inline'; }}
+    else {{ link.style.display = 'none'; }}
+    // 侧边栏高亮
+    document.querySelectorAll('.sidebar-item').forEach(function(el) {{
+      el.classList.toggle('active', el.dataset.id === nodeId);
+    }});
+  }}
+
+  function clearHighlight() {{
+    graph.getNodes().forEach(function(n) {{ graph.clearItemStates(n); }});
+    graph.getEdges().forEach(function(e) {{ graph.clearItemStates(e); }});
+    document.getElementById('node-detail').style.display = 'none';
+    document.querySelectorAll('.sidebar-item.active').forEach(function(el) {{ el.classList.remove('active'); }});
+  }}
+
+  // 构建侧边栏
+  var listEl = document.getElementById('sidebar-list');
+  ['article', 'concept', 'entity', 'other'].forEach(function(cat) {{
+    var items = sidebarData[cat];
+    if (!items || !items.length) return;
+    var group = document.createElement('div');
+    group.className = 'sidebar-group';
+    group.innerHTML = '<h4>' + (catLabels[cat] || cat) + ' (' + items.length + ')</h4>';
+    items.forEach(function(item) {{
+      var el = document.createElement('div');
+      el.className = 'sidebar-item';
+      el.textContent = item.name;
+      el.dataset.id = item.id;
+      el.onclick = function() {{ highlightNode(item.id); graph.focusItem(item.id, true); }};
+      group.appendChild(el);
+    }});
+    listEl.appendChild(group);
+  }});
+
+  // 窗口大小变化
+  window.addEventListener('resize', function() {{
+    if (graph && !graph.get('destroyed')) {{
+      graph.changeSize(container.offsetWidth, container.offsetHeight);
+    }}
+  }});
+}});
+</script>
+
+<small>{len(g6_nodes)} 个节点 · {len(g6_edges)} 条关联</small>
+"""
 
     graph_path = wiki_dir / "graph.md"
-    graph_path.write_text("\n".join(lines), encoding="utf-8")
+    graph_path.write_text(html, encoding="utf-8")
     return True
 
 
 def _safe_id(name: str) -> str:
-    """把名称转为 mermaid 安全的节点 ID（短哈希，避免冲突）。"""
+    """生成短哈希 ID。"""
     import hashlib
     import re
 
-    # 用 hash 生成短 ID，避免中文和特殊字符问题
     clean = re.sub(r"\s+", "", name.strip().lower())
     h = hashlib.md5(clean.encode()).hexdigest()[:8]
-    # 前缀用字母开头（mermaid 要求）
     return f"n{h}"
 
 
