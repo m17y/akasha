@@ -317,7 +317,8 @@ def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
 
 
 def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
-    """扫描所有 wiki 页面的 related/tags，生成 mermaid 关联图谱页面。"""
+    """扫描所有 wiki 页面的 related/tags + [[双链]]，生成 mermaid 关联图谱页面。"""
+    import hashlib
     import re
 
     wiki_dir = docs_dir / "wiki"
@@ -325,7 +326,8 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         return False
 
     # 收集节点和边
-    nodes: dict[str, str] = {}  # id → display_name
+    # node: id → {name, category}
+    nodes: dict[str, dict] = {}
     edges: list[tuple[str, str]] = []
 
     for md_file in wiki_dir.rglob("*.md"):
@@ -333,7 +335,19 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
             continue
         title = _extract_title(md_file)
         node_id = _safe_id(title)
-        nodes[node_id] = title
+
+        # 根据所在目录判断类型
+        rel = str(md_file.relative_to(wiki_dir))
+        if rel.startswith("concepts"):
+            category = "concept"
+        elif rel.startswith("entities"):
+            category = "entity"
+        elif rel.startswith("articles"):
+            category = "article"
+        else:
+            category = "other"
+
+        nodes[node_id] = {"name": title, "category": category}
 
         text = md_file.read_text(encoding="utf-8")
 
@@ -345,22 +359,35 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
                 for line in fm.split("\n"):
                     line = line.strip()
                     if line.startswith("related:"):
-                        # related: [xxx, yyy] 或多行格式
                         related_str = line[8:].strip().strip("[]")
                         for item in related_str.split(","):
                             item = item.strip().strip('"').strip("'")
                             if item:
                                 target_id = _safe_id(item)
                                 if target_id != node_id:
-                                    nodes.setdefault(target_id, item)
+                                    nodes.setdefault(
+                                        target_id,
+                                        {"name": item, "category": "other"},
+                                    )
                                     edges.append((node_id, target_id))
+                    elif line.startswith("- "):
+                        # 多行 related 列表格式
+                        item = line[2:].strip().strip('"').strip("'")
+                        if item:
+                            target_id = _safe_id(item)
+                            if target_id != node_id:
+                                nodes.setdefault(
+                                    target_id,
+                                    {"name": item, "category": "other"},
+                                )
+                                edges.append((node_id, target_id))
 
         # 从正文提取 [[双链]] 引用
         for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
             ref_name = m.group(1).strip()
             ref_id = _safe_id(ref_name)
             if ref_id != node_id and ref_id:
-                nodes.setdefault(ref_id, ref_name)
+                nodes.setdefault(ref_id, {"name": ref_name, "category": "other"})
                 edges.append((node_id, ref_id))
 
     if not nodes:
@@ -368,6 +395,24 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
 
     # 去重边
     edges = list(set(edges))
+
+    # 只保留有连线的节点（去掉孤立节点）
+    connected_ids = set()
+    for src, dst in edges:
+        connected_ids.add(src)
+        connected_ids.add(dst)
+
+    # 如果没有连线，显示所有节点
+    if not connected_ids:
+        connected_ids = set(nodes.keys())
+
+    # 样式映射
+    style_map = {
+        "article": "fill:#4a9eff,stroke:#2b7de9,color:#fff",
+        "concept": "fill:#10b981,stroke:#059669,color:#fff",
+        "entity": "fill:#f59e0b,stroke:#d97706,color:#fff",
+        "other": "fill:#6b7280,stroke:#4b5563,color:#fff",
+    }
 
     # 生成 mermaid graph
     lines = [
@@ -378,25 +423,44 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         "",
         "# 知识图谱",
         "",
-        "概念与文章之间的关联关系，自动从 `[[双链]]` 和 `related` 字段提取。",
+        "节点颜色：",
+        '<span style="color:#4a9eff">**■ 文章**</span> · '
+        '<span style="color:#10b981">**■ 概念**</span> · '
+        '<span style="color:#f59e0b">**■ 实体**</span>',
         "",
         "```mermaid",
-        "graph LR",
+        "graph TD",
     ]
 
-    for nid, name in nodes.items():
-        # 截断过长的名称
-        display = name if len(name) <= 20 else name[:17] + "..."
+    # 按类型分组输出节点
+    for nid, info in nodes.items():
+        if nid not in connected_ids:
+            continue
+        name = info["name"]
+        # 短标签：最多 12 个字符
+        display = name if len(name) <= 12 else name[:10] + ".."
+        # 转义双引号
+        display = display.replace('"', "'")
         lines.append(f'    {nid}["{display}"]')
+
+    lines.append("")
 
     for src, dst in edges:
         lines.append(f"    {src} --> {dst}")
 
-    lines.append("```")
     lines.append("")
 
-    # 统计
-    lines.append(f"<small>{len(nodes)} 个节点 · {len(edges)} 条关联</small>")
+    # 添加样式
+    for nid, info in nodes.items():
+        if nid not in connected_ids:
+            continue
+        cat = info["category"]
+        if cat in style_map:
+            lines.append(f"    style {nid} {style_map[cat]}")
+
+    lines.append("```")
+    lines.append("")
+    lines.append(f"<small>{len(connected_ids)} 个节点 · {len(edges)} 条关联</small>")
 
     graph_path = wiki_dir / "graph.md"
     graph_path.write_text("\n".join(lines), encoding="utf-8")
@@ -404,12 +468,15 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
 
 
 def _safe_id(name: str) -> str:
-    """把名称转为 mermaid 安全的节点 ID。"""
+    """把名称转为 mermaid 安全的节点 ID（短哈希，避免冲突）。"""
+    import hashlib
     import re
 
-    # 只保留中文、字母、数字
-    safe = re.sub(r"[^\w\u4e00-\u9fff]", "", name)
-    return safe[:30] if safe else "unknown"
+    # 用 hash 生成短 ID，避免中文和特殊字符问题
+    clean = re.sub(r"\s+", "", name.strip().lower())
+    h = hashlib.md5(clean.encode()).hexdigest()[:8]
+    # 前缀用字母开头（mermaid 要求）
+    return f"n{h}"
 
 
 # ---------------------------------------------------------------------------
