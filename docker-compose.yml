@@ -1,24 +1,17 @@
 services:
   akasha:
-    build: .
+    image: ghcr.io/m17y/akasha:latest
+    # build: .  # 本地构建时取消注释此行，注释上面的 image
     container_name: akasha
     restart: unless-stopped
     volumes:
       - akasha-data:/data
+    env_file:
+      - .env
     environment:
-      # ── 必填 ──
-      - AKASHA_LLM_API_KEY=${AKASHA_LLM_API_KEY}
-      # ── 可选（有默认值）──
+      # ── 数据目录（容器内固定路径）──
       - AKASHA_VAULT_PATH=/data/akasha
       - AKASHA_CHROMA_DIR=/data/chroma
-      - AKASHA_LLM_PROVIDER=${AKASHA_LLM_PROVIDER:-openai}
-      - AKASHA_LLM_BASE_URL=${AKASHA_LLM_BASE_URL:-}
-      - AKASHA_LLM_MODEL=${AKASHA_LLM_MODEL:-}
-      # ── 飞书（可选）──
-      - AKASHA_FEISHU_APP_ID=${AKASHA_FEISHU_APP_ID:-}
-      - AKASHA_FEISHU_APP_SECRET=${AKASHA_FEISHU_APP_SECRET:-}
-      # ── GitHub Pages 部署（可选）──
-      - AKASHA_SITE_REPO=${AKASHA_SITE_REPO:-}
     ports:
       - "8800:8800"
 

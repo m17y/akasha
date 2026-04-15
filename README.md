@@ -49,21 +49,17 @@ rm -rf ~/akasha           # 知识库内容
 
 ### Docker 安装
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/m17y/akasha.git
-cd akasha
+镜像托管在 GitHub Container Registry，每次推送代码自动构建。支持群晖 NAS / 任意 Docker 环境直接拉取。
 
-# 2. 创建 .env 文件配置环境变量
-cat > .env << 'EOF'
-AKASHA_LLM_PROVIDER=anthropic
-AKASHA_LLM_API_KEY=sk-xxx
-AKASHA_LLM_BASE_URL=https://api.minimaxi.com/anthropic
-AKASHA_LLM_MODEL=MiniMax-M2.7
-AKASHA_FEISHU_APP_ID=cli_xxx
-AKASHA_FEISHU_APP_SECRET=xxx
-AKASHA_SITE_REPO=https://github.com/user/user.github.io.git
-EOF
+```bash
+# 1. 创建目录并下载配置文件
+mkdir akasha && cd akasha
+curl -O https://raw.githubusercontent.com/m17y/akasha/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/m17y/akasha/main/.env.example
+cp .env.example .env
+
+# 2. 编辑 .env 填入你的配置
+vim .env   # 或用任何编辑器
 
 # 3. 启动
 docker compose up -d
@@ -72,12 +68,20 @@ docker compose up -d
 docker compose logs -f          # 查看日志
 docker compose restart          # 重启
 docker compose down             # 停止
-docker compose up -d --build    # 重新构建并启动
+docker compose pull && docker compose up -d  # 更新到最新版
 
 # 进入容器执行命令
 docker compose exec akasha akasha status
 docker compose exec akasha akasha site deploy
 ```
+
+**群晖 NAS 部署：**
+
+1. Container Manager → 项目 → 新建
+2. 上传 `docker-compose.yml` 和 `.env` 文件
+3. 启动项目
+
+镜像地址：`ghcr.io/m17y/akasha:latest`
 
 数据持久化在 Docker volume `akasha-data` 中，包含知识库内容和向量数据库。
 

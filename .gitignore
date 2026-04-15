@@ -17,6 +17,9 @@ mkdocs.yml
 # uv
 uv.lock
 
+# 环境变量（含密钥）
+.env
+
 # OS
 .DS_Store
 Thumbs.db
