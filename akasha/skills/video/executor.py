@@ -219,10 +219,10 @@ class VideoExecutor:
             if "转写失败" in transcript:
                 transcript = ""
 
-        # Step 3: LLM 分析内容，生成结构化知识文档
+        # Step 3: LLM 分析内容，生成结构化知识文档 + 创建概念/实体页面
         llm_analysis = ""
         if transcript:
-            llm_analysis = await self._analyze_content(info, transcript)
+            llm_analysis = await self._analyze_content(info, transcript, docs_dir)
 
         # Step 4: 生成 wiki 页面
         today = date.today().isoformat()
@@ -305,8 +305,10 @@ class VideoExecutor:
             print(f"[video] 转写失败: {e}", file=sys.stderr)
             return ""
 
-    async def _analyze_content(self, info: VideoInfo, transcript: str) -> str:
-        """用 LLM 分析转写内容，生成结构化知识文档。"""
+    async def _analyze_content(
+        self, info: VideoInfo, transcript: str, docs_dir: Path | None = None
+    ) -> str:
+        """用 LLM 分析转写内容，生成结构化知识文档，并创建概念/实体页面。"""
         try:
             from ...__init__ import _get_llm_client
 
@@ -329,7 +331,15 @@ class VideoExecutor:
                 "5. 如果有代码或命令，用代码块格式保留\n"
                 "6. 最后附上 ## 完整文字稿（折叠块）\n"
                 "7. 内容要详尽，不要遗漏重要信息\n"
-                "8. 用中文输出"
+                "8. 用中文输出\n"
+                "9. 在文档最末尾，用以下格式列出提取的概念和实体，"
+                "每行一个，这部分会被程序解析后删除：\n"
+                "```\n"
+                "<!-- CONCEPTS: Agent, Skill, Prompt Engineering -->\n"
+                "<!-- ENTITIES: Anthropic, Claude, MiniMax -->\n"
+                "```\n"
+                "CONCEPTS = 技术概念/方法论/设计模式\n"
+                "ENTITIES = 人名/公司/产品/工具"
             )
 
             user_msg = (
@@ -342,15 +352,62 @@ class VideoExecutor:
                 f"请整理为结构化的知识文档。"
             )
 
-            return await llm.chat(
+            result = await llm.chat(
                 system=system_prompt,
                 user=user_msg,
                 max_tokens=8192,
                 temperature=0.3,
             )
+
+            # 解析并创建概念/实体页面
+            if docs_dir:
+                self._create_linked_pages(result, info, docs_dir)
+
+            # 删除末尾的 CONCEPTS/ENTITIES 标记（不显示在文章里）
+            result = re.sub(
+                r"<!--\s*(?:CONCEPTS|ENTITIES)\s*:.*?-->\s*", "", result
+            ).rstrip()
+
+            return result
         except Exception as e:
             print(f"[video] LLM 分析失败: {e}", file=sys.stderr)
             return f"## 完整文字稿\n\n{transcript}"
+
+    def _create_linked_pages(
+        self, analysis: str, info: VideoInfo, docs_dir: Path
+    ) -> None:
+        """从 LLM 分析结果中提取概念和实体，创建对应的 wiki 页面。"""
+        today = date.today().isoformat()
+
+        for tag, category in [("CONCEPTS", "concepts"), ("ENTITIES", "entities")]:
+            m = re.search(rf"<!--\s*{tag}\s*:\s*(.+?)\s*-->", analysis)
+            if not m:
+                continue
+
+            items = [item.strip() for item in m.group(1).split(",") if item.strip()]
+            for item in items:
+                safe_name = re.sub(r"[^\w\-]", "-", item.lower())[:60].strip("-")
+                if not safe_name:
+                    continue
+
+                filepath = docs_dir / f"wiki/{category}/{safe_name}.md"
+                if filepath.exists():
+                    continue  # 已存在，不覆盖
+
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                page_content = (
+                    f"---\n"
+                    f'title: "{item}"\n'
+                    f"tags: [{category[:-1]}]\n"
+                    f"created: {today}\n"
+                    f"updated: {today}\n"
+                    f"status: seedling\n"
+                    f"---\n\n"
+                    f"# {item}\n\n"
+                    f"*从视频 [[{info.title}]] 中提取。*\n\n"
+                    f"## 简介\n\n（待补充）\n"
+                )
+                filepath.write_text(page_content, encoding="utf-8")
 
     # ── 后端实现 ──
 
