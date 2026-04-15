@@ -180,9 +180,12 @@ class VideoExecutor:
         if info.title == "(无法解析)":
             return f"无法解析视频信息: {url}"
 
+        # 文件名：最长 40 字符
         safe_title = (
-            re.sub(r"[^\w\-]", "-", info.title.lower())[:60].strip("-") or "video"
+            re.sub(r"[^\w\-]", "-", info.title.lower())[:40].strip("-") or "video"
         )
+        # 页面标题：最长 50 字符
+        display_title = info.title if len(info.title) <= 50 else info.title[:47] + "..."
         video_filename = f"{safe_title}.mp4"
         wiki_filename = f"{safe_title}.md"
         rel_path = f"wiki/articles/{wiki_filename}"
@@ -228,14 +231,14 @@ class VideoExecutor:
         today = date.today().isoformat()
         content = (
             f"---\n"
-            f'title: "{info.title}"\n'
+            f'title: "{display_title}"\n'
             f"tags: [video, {info.platform}]\n"
             f'source: "{info.url}"\n'
             f"created: {today}\n"
             f"updated: {today}\n"
             f"status: {'developing' if llm_analysis else 'seedling'}\n"
             f"---\n\n"
-            f"# {info.title}\n\n"
+            f"# {display_title}\n\n"
         )
 
         # 嵌入视频（用站点根路径，兼容 mkdocs 构建后的 URL 结构）
