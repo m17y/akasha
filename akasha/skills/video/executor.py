@@ -273,10 +273,8 @@ class VideoExecutor:
         if llm_analysis:
             content += llm_analysis + "\n"
         else:
-            # fallback: 没有 LLM 分析时，至少放转写文本
-            content += f"## 摘要\n\n{info.description or '(无描述)'}\n"
-            if transcript:
-                content += f"\n## 完整文字稿\n\n{transcript}\n"
+            # fallback: LLM 分析失败时用视频描述
+            content += f"## 摘要\n\n{info.description or '(暂无内容，LLM 分析失败)'}\n"
 
         if info.tags:
             tags_str = ", ".join(info.tags[:10])
@@ -312,24 +310,29 @@ class VideoExecutor:
 
             llm = _get_llm_client()
             if llm is None:
-                return f"## 完整文字稿\n\n{transcript}"
+                return ""
 
             system_prompt = (
-                "你是一个知识库管理助手。用户给你一段视频的转写文字稿，"
-                "你需要将其整理为结构化的知识文档。\n\n"
-                "## 输出规则\n"
+                "你是一位专业的知识写作大师，擅长技术文章、概念解析、行业分析等。\n"
+                "用户给你一段视频的转写文字稿（这是原始素材，不要直接展示），"
+                "你需要基于文字稿深度理解内容，撰写一篇高质量的知识文章。\n\n"
+                "## 写作要求\n"
                 "1. 直接输出 Markdown 内容，不要输出 frontmatter\n"
                 "2. 用 ## 开头的章节组织内容\n"
                 "3. 必须包含以下章节：\n"
-                "   - ## 内容概述（1-3 句话总结视频核心内容）\n"
-                "   - ## 关键知识点（用编号列表，提取所有重要知识点）\n"
-                "   - ## 详细笔记（按视频逻辑分段整理，保留关键细节和步骤）\n"
-                "   - ## 相关概念（列出提到的重要概念/工具/技术，用 [[双链]] 格式）\n"
-                "4. 如果是教程类视频，详细笔记中要保留操作步骤\n"
+                "   - ## 内容概述（1-3 句话总结核心观点，有深度）\n"
+                "   - ## 核心观点（提炼作者的关键论点，每个论点展开 2-3 句解释）\n"
+                "   - ## 深度解析（按逻辑重新组织内容，不是简单摘抄，"
+                "而是用你的理解重新阐述，保留关键细节、案例和步骤）\n"
+                "   - ## 实践启示（读者可以从中学到什么，如何应用）\n"
+                "   - ## 相关概念（列出涉及的重要概念/工具/技术/人物/公司，"
+                "每个用 [[双链]] 格式，如 [[Agent]]、[[LangChain]]）\n"
+                "4. 如果是教程类内容，深度解析中要保留完整操作步骤\n"
                 "5. 如果有代码或命令，用代码块格式保留\n"
-                "6. 最后附上 ## 完整文字稿（折叠块）\n"
-                "7. 内容要详尽，不要遗漏重要信息\n"
-                "8. 用中文输出"
+                "6. **不要**包含原始文字稿，文字稿仅供你理解内容用\n"
+                "7. 内容要详尽、有深度，体现你的专业理解\n"
+                "8. [[双链]] 要覆盖所有提到的关键概念、人物、公司、产品、框架\n"
+                "9. 用中文输出"
             )
 
             user_msg = (
@@ -349,11 +352,10 @@ class VideoExecutor:
                 temperature=0.3,
             )
 
-            # 解析并创建概念/实体页面
             return result
         except Exception as e:
             print(f"[video] LLM 分析失败: {e}", file=sys.stderr)
-            return f"## 完整文字稿\n\n{transcript}"
+            return ""
 
     # ── 后端实现 ──
 
