@@ -176,20 +176,56 @@ class MediaExecutor:
         return audio_path
 
     async def _whisper(self, audio_path: Path, source: str) -> TranscribeResult:
-        """调用 whisper 转写。优先 whisper CLI，fallback 到 OpenAI API。"""
-        # 尝试本地 whisper CLI
+        """调用 whisper 转写。优先 faster-whisper → whisper CLI → Whisper API。"""
+        # 1. 尝试 faster-whisper（Python API，最快）
+        result = await self._faster_whisper(audio_path, source)
+        if result:
+            return result
+
+        # 2. 尝试本地 whisper CLI
         result = await self._whisper_cli(audio_path, source)
         if result:
             return result
 
-        # fallback: OpenAI Whisper API
+        # 3. fallback: Whisper API（需要 AKASHA_WHISPER_API_KEY）
         result = await self._whisper_api(audio_path, source)
         if result:
             return result
 
         return TranscribeResult(
-            text="(转写失败: whisper CLI 和 API 均不可用)", source=source
+            text="(转写失败: faster-whisper、whisper CLI 和 API 均不可用)",
+            source=source,
         )
+
+    async def _faster_whisper(
+        self, audio_path: Path, source: str
+    ) -> TranscribeResult | None:
+        """faster-whisper Python API 转写。"""
+        try:
+            from faster_whisper import WhisperModel
+
+            def _run():
+                model = WhisperModel("base", device="cpu", compute_type="int8")
+                segments, info = model.transcribe(
+                    str(audio_path), language="zh", beam_size=5
+                )
+                text = "".join(seg.text for seg in segments)
+                return text, info.duration
+
+            loop = asyncio.get_event_loop()
+            text, duration = await loop.run_in_executor(None, _run)
+            if text:
+                return TranscribeResult(
+                    text=text, source=source, language="zh", duration_seconds=duration
+                )
+            return None
+        except ImportError:
+            return None
+        except Exception as e:
+            import sys
+
+            print(f"[media] faster-whisper 失败: {e}", file=sys.stderr)
+            return None
 
     async def _whisper_cli(
         self, audio_path: Path, source: str
@@ -228,11 +264,14 @@ class MediaExecutor:
     async def _whisper_api(
         self, audio_path: Path, source: str
     ) -> TranscribeResult | None:
-        """OpenAI Whisper API 转写。需要 AKASHA_LLM_API_KEY。"""
+        """Whisper API 转写。优先用 AKASHA_WHISPER_* 配置，fallback 到 OpenAI。"""
         import os
 
-        api_key = os.getenv("AKASHA_LLM_API_KEY", "")
-        base_url = os.getenv("AKASHA_LLM_BASE_URL", "https://api.openai.com/v1")
+        # 优先使用专用 whisper 配置（如 Groq）
+        api_key = os.getenv("AKASHA_WHISPER_API_KEY", "")
+        base_url = os.getenv("AKASHA_WHISPER_BASE_URL", "https://api.openai.com/v1")
+        model = os.getenv("AKASHA_WHISPER_MODEL", "whisper-1")
+
         if not api_key:
             return None
 
@@ -243,7 +282,7 @@ class MediaExecutor:
                     url,
                     headers={"Authorization": f"Bearer {api_key}"},
                     files={"file": (audio_path.name, f, "audio/wav")},
-                    data={"model": "whisper-1", "language": "zh"},
+                    data={"model": model, "language": "zh"},
                     timeout=120,
                 )
             resp.raise_for_status()

@@ -96,7 +96,7 @@ def _run_async(coro):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(_runner)
-        return future.result(timeout=120)
+        return future.result(timeout=600)  # 视频下载+转写可能需要较长时间
 
 
 class FeishuHandlers:

@@ -20,6 +20,10 @@ services:
       - AKASHA_FEISHU_APP_SECRET=
       # ── GitHub Pages 部署（不用可留空）──
       - AKASHA_SITE_REPO=
+      # ── 语音转写（不配则用容器内置 faster-whisper，CPU 较慢）──
+      # - AKASHA_WHISPER_API_KEY=gsk_xxx
+      # - AKASHA_WHISPER_BASE_URL=https://api.groq.com/openai/v1
+      # - AKASHA_WHISPER_MODEL=whisper-large-v3
       # ── Wiki 网站预览（设为 true 启用，端口 8800）──
       - AKASHA_SITE_SERVE=false
     ports:

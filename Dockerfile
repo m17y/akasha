@@ -21,7 +21,7 @@ RUN uv pip install --python /app/.venv/bin/python -e .
 
 # 安装可选工具
 RUN uv pip install --python /app/.venv/bin/python yt-dlp || true
-RUN uv pip install --python /app/.venv/bin/python openai-whisper || true
+RUN uv pip install --python /app/.venv/bin/python faster-whisper || true
 
 ENV PATH="/app/.venv/bin:$PATH"
 
