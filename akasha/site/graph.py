@@ -142,190 +142,121 @@ def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
         "other": "其他",
     }
 
-    html = f"""---
-hide:
-  - navigation
-  - toc
----
+    # 用字符串拼接而非 f-string，避免 JS 花括号与 Python/Jinja2 冲突
+    cat_labels_json = json.dumps(cat_labels, ensure_ascii=False)
+    stats = f"{len(g6_nodes)} 个节点 · {len(g6_edges)} 条关联"
 
-# 知识图谱
-
-{{% raw %}}
-
-<div id="graph-app">
-  <div id="sidebar">
-    <div class="legend">
-      <span class="dot" style="background:#4a9eff"></span> 文章
-      <span class="dot" style="background:#10b981"></span> 概念
-      <span class="dot" style="background:#f59e0b"></span> 实体
-    </div>
-    <div id="sidebar-list"></div>
-    <div id="node-detail" style="display:none">
-      <h3 id="detail-name"></h3>
-      <p id="detail-category"></p>
-      <a id="detail-link" href="#">查看页面 →</a>
-    </div>
-  </div>
-  <div id="graph-container"></div>
-</div>
-
-<style>
-#graph-app {{ display: flex; height: 70vh; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin: 1em 0; }}
-#sidebar {{ width: 220px; border-right: 1px solid #e0e0e0; overflow-y: auto; padding: 12px; background: #fafafa; flex-shrink: 0; }}
-#graph-container {{ flex: 1; background: #fff; }}
-.legend {{ margin-bottom: 12px; font-size: 13px; }}
-.dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 2px; margin-left: 8px; }}
-.sidebar-group {{ margin-bottom: 12px; }}
-.sidebar-group h4 {{ margin: 4px 0; font-size: 13px; color: #666; }}
-.sidebar-item {{ padding: 4px 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-.sidebar-item:hover {{ background: #e8f0fe; }}
-.sidebar-item.active {{ background: #4a9eff; color: #fff; }}
-#node-detail {{ margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd; }}
-#node-detail h3 {{ font-size: 14px; margin: 0 0 4px; }}
-#node-detail p {{ font-size: 12px; color: #888; margin: 0 0 8px; }}
-#node-detail a {{ font-size: 12px; }}
-</style>
-
-<script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.g6-0.x/build/g6.js"></script>
-<script src="https://unpkg.com/@antv/g6@4/dist/g6.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {{
-  var data = {graph_data};
-  var sidebarData = {sidebar_json};
-  var catLabels = {json.dumps(cat_labels, ensure_ascii=False)};
-
-  var container = document.getElementById('graph-container');
-  var width = container.offsetWidth || 800;
-  var height = container.offsetHeight || 500;
-
-  var graph = new G6.Graph({{
-    container: 'graph-container',
-    width: width,
-    height: height,
-    fitView: true,
-    fitViewPadding: 40,
-    animate: true,
-    modes: {{
-      default: ['drag-canvas', 'zoom-canvas', 'drag-node']
-    }},
-    layout: {{
-      type: 'force',
-      preventOverlap: true,
-      nodeSpacing: 60,
-      linkDistance: 150,
-      nodeStrength: -200,
-      edgeStrength: 0.3,
-      alphaDecay: 0.02
-    }},
-    defaultEdge: {{
-      style: {{ stroke: '#ccc', lineWidth: 1.5, endArrow: true }},
-    }},
-    nodeStateStyles: {{
-      highlight: {{ stroke: '#f59e0b', lineWidth: 3, shadowBlur: 10, shadowColor: '#f59e0b' }},
-      dim: {{ opacity: 0.3 }}
-    }},
-    edgeStateStyles: {{
-      highlight: {{ stroke: '#f59e0b', lineWidth: 2 }},
-      dim: {{ opacity: 0.15 }}
-    }}
-  }});
-
-  graph.data(data);
-  graph.render();
-
-  // 点击节点 → 高亮关联 + 显示详情
-  graph.on('node:click', function(e) {{
-    highlightNode(e.item.getID());
-  }});
-
-  // 点击画布空白 → 清除高亮
-  graph.on('canvas:click', function() {{
-    clearHighlight();
-  }});
-
-  // 双击节点 → 跳转页面
-  graph.on('node:dblclick', function(e) {{
-    var model = e.item.getModel();
-    if (model.url) window.location.href = '/' + model.url;
-  }});
-
-  function highlightNode(nodeId) {{
-    clearHighlight();
-    var item = graph.findById(nodeId);
-    if (!item) return;
-    graph.setItemState(item, 'highlight', true);
-    // 高亮相邻节点和边
-    var edges = graph.getEdges();
-    var neighborIds = new Set();
-    edges.forEach(function(edge) {{
-      var src = edge.getSource().getID();
-      var tgt = edge.getTarget().getID();
-      if (src === nodeId || tgt === nodeId) {{
-        graph.setItemState(edge, 'highlight', true);
-        neighborIds.add(src);
-        neighborIds.add(tgt);
-      }} else {{
-        graph.setItemState(edge, 'dim', true);
-      }}
-    }});
-    graph.getNodes().forEach(function(node) {{
-      var id = node.getID();
-      if (id !== nodeId && !neighborIds.has(id)) {{
-        graph.setItemState(node, 'dim', true);
-      }}
-    }});
-    // 更新详情面板
-    var model = item.getModel();
-    document.getElementById('node-detail').style.display = 'block';
-    document.getElementById('detail-name').textContent = model.fullName;
-    document.getElementById('detail-category').textContent = catLabels[model.category] || model.category;
-    var link = document.getElementById('detail-link');
-    if (model.url) {{ link.href = '/' + model.url; link.style.display = 'inline'; }}
-    else {{ link.style.display = 'none'; }}
-    // 侧边栏高亮
-    document.querySelectorAll('.sidebar-item').forEach(function(el) {{
-      el.classList.toggle('active', el.dataset.id === nodeId);
-    }});
-  }}
-
-  function clearHighlight() {{
-    graph.getNodes().forEach(function(n) {{ graph.clearItemStates(n); }});
-    graph.getEdges().forEach(function(e) {{ graph.clearItemStates(e); }});
-    document.getElementById('node-detail').style.display = 'none';
-    document.querySelectorAll('.sidebar-item.active').forEach(function(el) {{ el.classList.remove('active'); }});
-  }}
-
-  // 构建侧边栏
-  var listEl = document.getElementById('sidebar-list');
-  ['article', 'concept', 'entity', 'other'].forEach(function(cat) {{
-    var items = sidebarData[cat];
-    if (!items || !items.length) return;
-    var group = document.createElement('div');
-    group.className = 'sidebar-group';
-    group.innerHTML = '<h4>' + (catLabels[cat] || cat) + ' (' + items.length + ')</h4>';
-    items.forEach(function(item) {{
-      var el = document.createElement('div');
-      el.className = 'sidebar-item';
-      el.textContent = item.name;
-      el.dataset.id = item.id;
-      el.onclick = function() {{ highlightNode(item.id); graph.focusItem(item.id, true); }};
-      group.appendChild(el);
-    }});
-    listEl.appendChild(group);
-  }});
-
-  // 窗口大小变化
-  window.addEventListener('resize', function() {{
-    if (graph && !graph.get('destroyed')) {{
-      graph.changeSize(container.offsetWidth, container.offsetHeight);
-    }}
-  }});
-}});
-</script>
-
-<small>{len(g6_nodes)} 个节点 · {len(g6_edges)} 条关联</small>
-{{% endraw %}}
-"""
+    html = (
+        "---\nhide:\n  - navigation\n  - toc\n---\n\n"
+        "# 知识图谱\n\n"
+        '<div id="graph-app">\n'
+        '  <div id="sidebar">\n'
+        '    <div class="legend">\n'
+        '      <span class="dot" style="background:#4a9eff"></span> 文章\n'
+        '      <span class="dot" style="background:#10b981"></span> 概念\n'
+        '      <span class="dot" style="background:#f59e0b"></span> 实体\n'
+        "    </div>\n"
+        '    <div id="sidebar-list"></div>\n'
+        '    <div id="node-detail" style="display:none">\n'
+        '      <h3 id="detail-name"></h3>\n'
+        '      <p id="detail-category"></p>\n'
+        '      <a id="detail-link" href="#">查看页面 →</a>\n'
+        "    </div>\n"
+        "  </div>\n"
+        '  <div id="graph-container"></div>\n'
+        "</div>\n\n"
+        "<style>\n"
+        "#graph-app { display: flex; height: 70vh; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin: 1em 0; }\n"
+        "#sidebar { width: 220px; border-right: 1px solid #e0e0e0; overflow-y: auto; padding: 12px; background: #fafafa; flex-shrink: 0; }\n"
+        "#graph-container { flex: 1; background: #fff; }\n"
+        ".legend { margin-bottom: 12px; font-size: 13px; }\n"
+        ".dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 2px; margin-left: 8px; }\n"
+        ".sidebar-group { margin-bottom: 12px; }\n"
+        ".sidebar-group h4 { margin: 4px 0; font-size: 13px; color: #666; }\n"
+        ".sidebar-item { padding: 4px 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n"
+        ".sidebar-item:hover { background: #e8f0fe; }\n"
+        ".sidebar-item.active { background: #4a9eff; color: #fff; }\n"
+        "#node-detail { margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd; }\n"
+        "#node-detail h3 { font-size: 14px; margin: 0 0 4px; }\n"
+        "#node-detail p { font-size: 12px; color: #888; margin: 0 0 8px; }\n"
+        "#node-detail a { font-size: 12px; }\n"
+        "</style>\n\n"
+        '<script src="https://unpkg.com/@antv/g6@4/dist/g6.min.js"></script>\n'
+        "<script>\n"
+        "document.addEventListener('DOMContentLoaded', function() {\n"
+        "  var data = " + graph_data + ";\n"
+        "  var sidebarData = " + sidebar_json + ";\n"
+        "  var catLabels = " + cat_labels_json + ";\n"
+        "\n"
+        "  var container = document.getElementById('graph-container');\n"
+        "  var width = container.offsetWidth || 800;\n"
+        "  var height = container.offsetHeight || 500;\n"
+        "\n"
+        "  var graph = new G6.Graph({\n"
+        "    container: 'graph-container',\n"
+        "    width: width, height: height,\n"
+        "    fitView: true, fitViewPadding: 40, animate: true,\n"
+        "    modes: { default: ['drag-canvas', 'zoom-canvas', 'drag-node'] },\n"
+        "    layout: { type: 'force', preventOverlap: true, nodeSpacing: 60, linkDistance: 150, nodeStrength: -200, edgeStrength: 0.3, alphaDecay: 0.02 },\n"
+        "    defaultEdge: { style: { stroke: '#ccc', lineWidth: 1.5, endArrow: true } },\n"
+        "    nodeStateStyles: { highlight: { stroke: '#f59e0b', lineWidth: 3, shadowBlur: 10, shadowColor: '#f59e0b' }, dim: { opacity: 0.3 } },\n"
+        "    edgeStateStyles: { highlight: { stroke: '#f59e0b', lineWidth: 2 }, dim: { opacity: 0.15 } }\n"
+        "  });\n"
+        "  graph.data(data);\n"
+        "  graph.render();\n"
+        "\n"
+        "  graph.on('node:click', function(e) { highlightNode(e.item.getID()); });\n"
+        "  graph.on('canvas:click', function() { clearHighlight(); });\n"
+        "  graph.on('node:dblclick', function(e) { var m = e.item.getModel(); if (m.url) window.location.href = '/' + m.url; });\n"
+        "\n"
+        "  function highlightNode(nodeId) {\n"
+        "    clearHighlight();\n"
+        "    var item = graph.findById(nodeId);\n"
+        "    if (!item) return;\n"
+        "    graph.setItemState(item, 'highlight', true);\n"
+        "    var edges = graph.getEdges();\n"
+        "    var neighborIds = new Set();\n"
+        "    edges.forEach(function(edge) {\n"
+        "      var src = edge.getSource().getID(), tgt = edge.getTarget().getID();\n"
+        "      if (src === nodeId || tgt === nodeId) { graph.setItemState(edge, 'highlight', true); neighborIds.add(src); neighborIds.add(tgt); }\n"
+        "      else { graph.setItemState(edge, 'dim', true); }\n"
+        "    });\n"
+        "    graph.getNodes().forEach(function(node) { var id = node.getID(); if (id !== nodeId && !neighborIds.has(id)) graph.setItemState(node, 'dim', true); });\n"
+        "    var model = item.getModel();\n"
+        "    document.getElementById('node-detail').style.display = 'block';\n"
+        "    document.getElementById('detail-name').textContent = model.fullName;\n"
+        "    document.getElementById('detail-category').textContent = catLabels[model.category] || model.category;\n"
+        "    var link = document.getElementById('detail-link');\n"
+        "    if (model.url) { link.href = '/' + model.url; link.style.display = 'inline'; } else { link.style.display = 'none'; }\n"
+        "    document.querySelectorAll('.sidebar-item').forEach(function(el) { el.classList.toggle('active', el.dataset.id === nodeId); });\n"
+        "  }\n"
+        "\n"
+        "  function clearHighlight() {\n"
+        "    graph.getNodes().forEach(function(n) { graph.clearItemStates(n); });\n"
+        "    graph.getEdges().forEach(function(e) { graph.clearItemStates(e); });\n"
+        "    document.getElementById('node-detail').style.display = 'none';\n"
+        "    document.querySelectorAll('.sidebar-item.active').forEach(function(el) { el.classList.remove('active'); });\n"
+        "  }\n"
+        "\n"
+        "  var listEl = document.getElementById('sidebar-list');\n"
+        "  ['article', 'concept', 'entity', 'other'].forEach(function(cat) {\n"
+        "    var items = sidebarData[cat]; if (!items || !items.length) return;\n"
+        "    var group = document.createElement('div'); group.className = 'sidebar-group';\n"
+        "    group.innerHTML = '<h4>' + (catLabels[cat] || cat) + ' (' + items.length + ')</h4>';\n"
+        "    items.forEach(function(item) {\n"
+        "      var el = document.createElement('div'); el.className = 'sidebar-item';\n"
+        "      el.textContent = item.name; el.dataset.id = item.id;\n"
+        "      el.onclick = function() { highlightNode(item.id); graph.focusItem(item.id, true); };\n"
+        "      group.appendChild(el);\n"
+        "    });\n"
+        "    listEl.appendChild(group);\n"
+        "  });\n"
+        "\n"
+        "  window.addEventListener('resize', function() { if (graph && !graph.get('destroyed')) graph.changeSize(container.offsetWidth, container.offsetHeight); });\n"
+        "});\n"
+        "</script>\n\n"
+        "<small>" + stats + "</small>\n"
+    )
 
     graph_path = wiki_dir / "graph.md"
     graph_path.write_text(html, encoding="utf-8")
