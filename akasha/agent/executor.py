@@ -50,6 +50,10 @@ class Executor:
                 "handler": self._lint,
                 "description": "Wiki 健康检查",
             },
+            "delete_page": {
+                "handler": self._delete_page,
+                "description": "删除 wiki 页面",
+            },
         }
 
     def get_available_tools(self) -> list[str]:
@@ -115,3 +119,6 @@ class Executor:
 
     async def _lint(self) -> str:
         return self.vault.lint()
+
+    async def _delete_page(self, file_path: str) -> str:
+        return self.vault.delete_page(file_path)

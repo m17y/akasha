@@ -402,6 +402,27 @@ class Vault:
 
         return f"已保存为: {page_path}"
 
+    def delete_page(self, file_path: str) -> str:
+        """删除 wiki 页面。
+
+        Args:
+            file_path: 相对于 docs 的路径（如 wiki/articles/xxx.md）
+
+        Returns:
+            删除结果文本
+        """
+        # 安全检查：只允许删除 wiki/ 下的文件
+        if not file_path.startswith("wiki/"):
+            return f"安全限制: 只能删除 wiki/ 下的文件，不能删除 {file_path}"
+
+        full_path = self.config.docs_dir / file_path
+        if not full_path.exists():
+            return f"文件不存在: {file_path}"
+
+        full_path.unlink()
+        self.index.refresh()
+        return f"已删除: {file_path}"
+
     def lint(self) -> str:
         """Wiki 健康检查。
 

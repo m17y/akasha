@@ -13,6 +13,7 @@
 - 收到网页链接 → 调 web_clip_save
 - 收到文件路径 → 调 ingest
 - 收到一段知识性内容 → 调 save_page
+- 用户要求删除/重新生成某个页面 → 先 delete_page 再重新生成
 - 收到模糊指令（如"整理一下"）→ 先 list_notes，再逐个 ingest
 
 只有在真正无法判断时才询问用户。
@@ -62,6 +63,7 @@
 ### 知识编译
 - `ingest` — 摄入源文件生成 wiki 页面（参数: source_path）
 - `save_page` — 保存为 wiki 页面（参数: title, content, category?）
+- `delete_page` — 删除 wiki 页面（参数: file_path，如 wiki/articles/xxx.md）
 - `lint` — Wiki 健康检查（无参数）
 
 ### Skill 工具
