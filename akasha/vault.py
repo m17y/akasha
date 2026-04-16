@@ -416,17 +416,22 @@ class Vault:
             except Exception as e:
                 print(f"[vault] 概念简介生成失败: {e}")
 
+        print(
+            f"[vault] LLM 生成了 {len(descriptions)} 个概念简介，需要 {len(unique)} 个"
+        )
+
         # 写入页面
         for ref_name, safe_name, source in unique:
-            # 查找 LLM 返回的信息
+            # 查找 LLM 返回的信息（多种匹配策略）
             info = descriptions.get(ref_name.lower())
             if not info:
-                # 模糊匹配
+                info = descriptions.get(safe_name.replace("-", " "))
+            if not info:
+                # 模糊匹配：概念名包含 safe_name 或 safe_name 包含概念名
                 for k, v in descriptions.items():
-                    if (
-                        safe_name.replace("-", "")
-                        in k.replace(" ", "").replace("-", "").lower()
-                    ):
+                    k_clean = k.replace(" ", "").replace("-", "").lower()
+                    s_clean = safe_name.replace("-", "").lower()
+                    if s_clean in k_clean or k_clean in s_clean:
                         info = v
                         break
 
@@ -864,6 +869,12 @@ def _is_junk_concept(name: str) -> bool:
 
     # URL
     if name.startswith("http") or name.startswith("www."):
+        return True
+
+    # 中英文混合（如 "AWQ量化"、"Agent架构"）→ 应该纯英文或纯中文
+    has_chinese = bool(re.search(r"[\u4e00-\u9fff]", name))
+    has_english = bool(re.search(r"[a-zA-Z]", name))
+    if has_chinese and has_english:
         return True
 
     return False
