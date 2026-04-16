@@ -97,3 +97,83 @@ remote:
 To https://github.com/m17y/akasha.git
  * [new branch]      dev -> dev
 [2026-04-16 14:31:38] 完成! 改动 1 个文件
+[2026-04-16 14:35:14] ==========================================
+[2026-04-16 14:35:14] 开始新一轮 Auto-Improve
+[2026-04-16 14:35:14] ==========================================
+[2026-04-16 14:35:15] 调用 OpenCode Agent...
+[0m
+> build · ppio/pa/claude-opus-4-6
+[0m
+I'd be happy to help improve the codebase! Let me first explore the project to understand what we're working with.
+[0m• [0mExplore codebase structure[90m Explore Agent[0m
+[0m✓ [0mExplore codebase structure[90m Explore Agent[0m
+Here's an analysis of the **akasha** codebase with actionable improvement recommendations, organized by priority:
+
+---
+
+## Critical
+
+1. **Secrets in `.env` file** -- Your working tree contains real API keys (OpenAI, Feishu). Even though `.env` is gitignored, verify it was never committed with `git log --all --diff-filter=A -- .env`. Rotate all credentials regardless.
+
+2. **Makefile `push` target runs `git add .`** -- This could accidentally stage sensitive files like `.env`. Very dangerous given the above.
+
+---
+
+## High Priority (Architecture)
+
+3. **`vault.py` is 893 lines and growing** -- Extract concept extraction (`_on_pages_created`, `_create_concept_pages`, `_is_junk_concept`) into a dedicated `concept_extractor.py` module.
+
+4. **Agent uses regex JSON parsing instead of function calling** -- Both OpenAI and Anthropic support native tool/function calling. The current regex-based approach in `agent/loop.py:213-249` is fragile. (Your own TODO-LIST.md acknowledges this.)
+
+5. **Dead code: `SessionManager` never used** -- `agent/memory.py` defines `SessionManager` but `_session_mgr` is never initialized in `AgentLoop`. Either integrate it or remove it.
+
+6. **Module-level `Vault()` in MCP server** -- `serve/mcp.py:17` creates a Vault at import time, causing side effects. Use lazy initialization instead.
+
+---
+
+## Medium Priority (Code Quality)
+
+7. **Duplicated logic in 3 places:**
+   - Title extraction: `compiler.py:470`, `site/mkdocs_config.py:157`, `site/resources.py:12`
+   - Frontmatter parsing: `storage/index.py:133`, `skills/__init__.py:175`, `site/resources.py:12`
+   - Consolidate into shared utilities.
+
+8. **Bare `except Exception` swallowing errors** -- `vault.py:448`, `video/executor.py:378`, `site/__init__.py:134` all silently catch exceptions. At minimum log the traceback.
+
+9. **Anthropic semaphore(1) penalizes all users** -- `llm.py:128-134` limits to 1 concurrent request as a workaround for MiniMax 529 errors. Make this configurable or provider-specific.
+
+10. **httpx clients never closed** -- `VideoExecutor`, `WebClipExecutor`, `MediaExecutor` create `httpx.AsyncClient` instances but never call `close()`, leaking connections.
+
+11. **No type hints on core parameters** -- `Executor.__init__` and `AgentLoop.__init__` accept `vault` without type annotations.
+
+---
+
+## Low Priority (Project Hygiene)
+
+12. **No tests for:** PDF skill, entire `site/` module, post-save hooks
+13. **Optional dependencies not declared** in `pyproject.toml` -- `yt-dlp`, `faster-whisper`, `pymupdf`, `pdfplumber` should be in `[project.optional-dependencies]`
+14. **Dockerfile duplicates dependency list** instead of using `uv sync` or `pip install .`
+15. **`entrypoint.sh` is unused** -- Dockerfile uses `ENTRYPOINT ["akasha"]` directly
+16. **Empty `scripts/` directory** -- Remove or populate
+17. **`uv.lock` is gitignored** -- For a deployable app, commit the lock file for reproducible builds
+18. **`_is_junk_concept` is too aggressive** -- Filters out all Chinese-English mixed names, rejecting legitimate concepts like "Agent 架构"
+19. **Hardcoded whisper model "base"** in `media/executor.py:214` ignores the `AKASHA_WHISPER_MODEL` env var for local mode
+20. **Inconsistent `asyncio_mode`** -- Some tests use `@pytest.mark.asyncio` and others use `@pytest.mark.asyncio(loop_scope="function")`
+
+---
+
+Would you like me to start implementing fixes for any of these? I'd suggest starting with the critical items (secret rotation, Makefile fix) and then moving to the architecture improvements.
+[2026-04-16 14:39:12] 语法检查...
+[2026-04-16 14:39:13] 冒烟测试...
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_smoke.py::TestImports::test_import_config
+  /Users/syf/work/git-hub/akasha/.venv/lib/python3.14/site-packages/chromadb/telemetry/opentelemetry/__init__.py:128: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(f):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+19 passed, 1 warning in 0.85s
+[2026-04-16 14:39:16] 生成改进清单...
+To https://github.com/m17y/akasha.git
+ + 23fc9fc...abe89bd dev -> dev (forced update)
+[2026-04-16 14:39:18] 完成! 改动 5 个文件

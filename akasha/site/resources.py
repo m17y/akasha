@@ -168,6 +168,7 @@ def generate_resources_page(docs_dir: Path) -> bool:
     lines.append(".status-seedling { background: #fef3c7; color: #92400e; }")
     lines.append(".status-developing { background: #dbeafe; color: #1e40af; }")
     lines.append(".status-published { background: #d1fae5; color: #065f46; }")
+    lines.append(".status-draft { background: #f3f4f6; color: #4b5563; }")
     lines.append("</style>")
     lines.append("")
 
@@ -197,7 +198,7 @@ def generate_resources_page(docs_dir: Path) -> bool:
             # 状态徽章
             status_class = (
                 f"status-{status}"
-                if status in ("seedling", "developing", "published")
+                if status in ("seedling", "developing", "published", "draft")
                 else ""
             )
             status_html = (
