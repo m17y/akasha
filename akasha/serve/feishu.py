@@ -275,7 +275,33 @@ def _add_reaction(message_id: str, emoji_type: str = "OnIt") -> None:
 
 
 def _send_reply(message_id: str, text: str) -> None:
-    """回复飞书消息（同步调用）。"""
+    """回复飞书消息（同步调用）。超长消息自动分段。"""
+    MAX_LEN = 3500  # 飞书文本消息限制约 4000 字符，留余量
+
+    if len(text) <= MAX_LEN:
+        _send_reply_raw(message_id, text)
+    else:
+        # 分段发送
+        parts = []
+        while text:
+            if len(text) <= MAX_LEN:
+                parts.append(text)
+                break
+            # 在换行符处截断
+            cut = text.rfind("\n", 0, MAX_LEN)
+            if cut <= 0:
+                cut = MAX_LEN
+            parts.append(text[:cut])
+            text = text[cut:].lstrip("\n")
+
+        for i, part in enumerate(parts):
+            if len(parts) > 1:
+                part = f"({i + 1}/{len(parts)})\n{part}"
+            _send_reply_raw(message_id, part)
+
+
+def _send_reply_raw(message_id: str, text: str) -> None:
+    """发送单条飞书回复。"""
     client = _get_lark_client()
     body = (
         ReplyMessageRequestBody.builder()
@@ -426,6 +452,28 @@ def _on_message_receive(data: P2ImMessageReceiveV1) -> None:
             content = json.loads(message.content or "{}")
             text = content.get("text", "").strip()
         except json.JSONDecodeError:
+            text = ""
+    elif message_type == "post":
+        # 富文本消息（长文本、带格式的消息）
+        try:
+            content = json.loads(message.content or "{}")
+            # post 格式: {"zh_cn": {"title": "...", "content": [[{"tag":"text","text":"..."}]]}}
+            post = content.get("zh_cn") or content.get("en_us") or {}
+            title = post.get("title", "")
+            paragraphs = post.get("content", [])
+            parts = []
+            if title:
+                parts.append(title)
+            for para in paragraphs:
+                for elem in para:
+                    if elem.get("tag") == "text":
+                        parts.append(elem.get("text", ""))
+                    elif elem.get("tag") == "a":
+                        parts.append(elem.get("href", ""))
+                    elif elem.get("tag") == "at":
+                        pass  # 跳过 @提及
+            text = "\n".join(parts).strip()
+        except (json.JSONDecodeError, Exception):
             text = ""
     elif message_type == "file":
         # 文件消息：下载并处理
