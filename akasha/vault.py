@@ -460,46 +460,82 @@ class Vault:
             filepath.write_text(page_content, encoding="utf-8")
 
     async def refresh_concepts(self) -> str:
-        """重新生成所有概念页面的简介。"""
+        """重新生成所有概念/实体页面：LLM 重写简介 + 分类，保留相关文章引用。"""
+        import re
         from datetime import date
 
         docs_dir = self.config.docs_dir
-        concepts_dir = docs_dir / "wiki" / "concepts"
-        if not concepts_dir.exists():
-            return "概念目录不存在"
-
         today = date.today().isoformat()
-        concept_files = list(concepts_dir.glob("*.md"))
-        if not concept_files:
-            return "没有概念页面"
 
-        # 收集所有概念名
+        # Step 1: 扫描所有文章，收集每个 [[双链]] 被哪些文章引用
+        # ref_name → set of source_names
+        ref_sources: dict[str, set[str]] = {}
+        articles_dir = docs_dir / "wiki" / "articles"
+        if articles_dir.exists():
+            for md in articles_dir.rglob("*.md"):
+                text = md.read_text(encoding="utf-8")
+                source_name = md.stem
+                for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
+                    ref_name = m.group(1).strip()
+                    if ref_name and not _is_junk_concept(ref_name):
+                        ref_sources.setdefault(ref_name, set()).add(source_name)
+
+        if not ref_sources:
+            return "没有找到任何 [[双链]] 引用"
+
+        # Step 2: 删除旧的 concepts/ 和 entities/ 页面
+        for dir_name in ("concepts", "entities"):
+            d = docs_dir / "wiki" / dir_name
+            if d.exists():
+                for f in d.glob("*.md"):
+                    f.unlink()
+
+        # Step 3: 用 LLM 重新生成（带分类）
         concepts = []
-        for f in concept_files:
-            title = f.stem.replace("-", " ").title()
-            # 从 frontmatter 提取真实标题
-            text = f.read_text(encoding="utf-8")
-            if text.startswith("---"):
-                parts = text.split("---", 2)
-                if len(parts) >= 3:
-                    for line in parts[1].split("\n"):
-                        if line.strip().startswith("title:"):
-                            t = line.split(":", 1)[1].strip().strip('"').strip("'")
-                            if t:
-                                title = t
-                            break
-            concepts.append((title, f.stem, f))
+        for ref_name, sources in ref_sources.items():
+            safe_name = re.sub(r"[^\w\-]", "-", ref_name.lower())[:60].strip("-")
+            if safe_name:
+                # 取第一个来源作为 source（实际会在下面补全所有来源）
+                concepts.append((ref_name, safe_name, ""))
 
-        # 删除旧页面
-        for _, _, filepath in concepts:
-            filepath.unlink()
+        await self._create_concept_pages(docs_dir, concepts, today)
 
-        # 用 _create_concept_pages 重新生成
-        concept_tuples = [(name, stem, "") for name, stem, _ in concepts]
-        await self._create_concept_pages(docs_dir, concept_tuples, today)
+        # Step 4: 补全所有相关文章引用
+        for ref_name, sources in ref_sources.items():
+            safe_name = re.sub(r"[^\w\-]", "-", ref_name.lower())[:60].strip("-")
+            if not safe_name:
+                continue
+            # 查找页面（可能在 concepts/ 或 entities/）
+            filepath = None
+            for dir_name in ("concepts", "entities"):
+                p = docs_dir / f"wiki/{dir_name}/{safe_name}.md"
+                if p.exists():
+                    filepath = p
+                    break
+            if not filepath:
+                continue
+
+            text = filepath.read_text(encoding="utf-8")
+            # 确保有相关文章章节
+            if "## 相关文章" not in text:
+                text = text.rstrip() + "\n\n## 相关文章\n\n"
+            # 追加所有来源
+            for src in sorted(sources):
+                link = f"[[{src}]]"
+                if link not in text:
+                    text = text.rstrip() + f"\n- {link}\n"
+            filepath.write_text(text, encoding="utf-8")
 
         self.index.refresh()
-        return f"已重新生成 {len(concepts)} 个概念页面"
+        total = len(
+            [
+                p
+                for d in ("concepts", "entities")
+                for p in (docs_dir / "wiki" / d).glob("*.md")
+                if (docs_dir / "wiki" / d).exists()
+            ]
+        )
+        return f"已重新生成 {total} 个概念/实体页面，从 {len(ref_sources)} 个 [[双链]] 引用中提取"
 
     def get_skill_prompts(self) -> dict[str, str]:
         """获取所有 skill 的 prompt（skill.md 内容），供 Agent 使用。"""
