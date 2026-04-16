@@ -281,8 +281,13 @@ class Vault:
             log_entries.append(f"- **{tool_name}** → {page}")
         self.files.append_file("log.md", "\n".join(log_entries) + "\n")
 
-        # Hook 2: 从新文章中提取 concepts/entities（扫描 [[双链]]）
+        # Hook 2: 从新文章中提取 concepts（扫描 [[双链]]），LLM 生成简介
+        import asyncio
         import re
+
+        new_concepts: list[
+            tuple[str, str, str]
+        ] = []  # (ref_name, safe_name, source_page)
 
         for page in new_pages:
             if not page.startswith("wiki/articles/"):
@@ -301,30 +306,121 @@ class Vault:
                     continue
 
                 # 检查是否已存在
+                exists = False
                 for category in ("concepts", "entities"):
                     if (docs_dir / f"wiki/{category}/{safe_name}.md").exists():
+                        exists = True
                         break
-                else:
-                    # 默认放 concepts（LLM 分析后可能会调整）
-                    filepath = docs_dir / f"wiki/concepts/{safe_name}.md"
-                    filepath.parent.mkdir(parents=True, exist_ok=True)
-                    if not filepath.exists():
-                        title = ref_name
-                        page_content = (
-                            f"---\n"
-                            f'title: "{title}"\n'
-                            f"tags: [concept]\n"
-                            f"created: {today}\n"
-                            f"status: seedling\n"
-                            f"---\n\n"
-                            f"# {title}\n\n"
-                            f"*自动从 [[{page.split('/')[-1].replace('.md', '')}]] 中提取。*\n\n"
-                            f"## 简介\n\n（待补充）\n"
-                        )
-                        filepath.write_text(page_content, encoding="utf-8")
+                if not exists:
+                    new_concepts.append((ref_name, safe_name, page))
+
+        # 批量让 LLM 生成概念简介
+        if new_concepts:
+            self._create_concept_pages(docs_dir, new_concepts, today)
 
         # Hook 3: 刷新索引
         self.index.refresh()
+
+    def _create_concept_pages(
+        self, docs_dir, concepts: list[tuple[str, str, str]], today: str
+    ) -> None:
+        """批量创建概念页面，用 LLM 生成简介。"""
+        from akasha import _get_llm_client
+
+        llm = _get_llm_client()
+
+        # 去重
+        seen = set()
+        unique = []
+        for ref_name, safe_name, source in concepts:
+            if safe_name not in seen:
+                seen.add(safe_name)
+                unique.append((ref_name, safe_name, source))
+
+        # 批量请求 LLM（一次调用生成所有概念的简介）
+        concept_names = [name for name, _, _ in unique]
+        descriptions = {}
+
+        if llm and len(concept_names) <= 20:
+            try:
+                import asyncio
+
+                prompt = (
+                    "为以下概念各写一段简介（2-3 句话），用中文。\n"
+                    "如果是技术概念，说明它是什么、解决什么问题。\n"
+                    "如果是人物/公司，说明身份和主要贡献。\n"
+                    "格式：每个概念用 `## 概念名` 开头，后面跟简介。\n\n"
+                    "概念列表：\n" + "\n".join(f"- {name}" for name in concept_names)
+                )
+
+                result = asyncio.run(
+                    llm.chat(
+                        system="你是一个百科知识助手，简洁准确地解释概念。",
+                        user=prompt,
+                        max_tokens=4096,
+                        temperature=0.3,
+                    )
+                )
+
+                # 解析 LLM 输出
+                import re as _re
+
+                current_name = None
+                current_lines = []
+                for line in result.split("\n"):
+                    m = _re.match(r"^##\s+(.+)", line)
+                    if m:
+                        if current_name and current_lines:
+                            descriptions[current_name.lower()] = "\n".join(
+                                current_lines
+                            ).strip()
+                        current_name = m.group(1).strip()
+                        current_lines = []
+                    elif current_name:
+                        current_lines.append(line)
+                if current_name and current_lines:
+                    descriptions[current_name.lower()] = "\n".join(
+                        current_lines
+                    ).strip()
+
+            except Exception as e:
+                print(f"[vault] 概念简介生成失败: {e}")
+
+        # 写入概念页面
+        for ref_name, safe_name, source in unique:
+            filepath = docs_dir / f"wiki/concepts/{safe_name}.md"
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            if filepath.exists():
+                continue
+
+            # 查找 LLM 生成的简介
+            desc = descriptions.get(ref_name.lower(), "")
+            if not desc:
+                # 模糊匹配
+                for k, v in descriptions.items():
+                    if (
+                        safe_name.replace("-", "")
+                        in k.replace(" ", "").replace("-", "").lower()
+                    ):
+                        desc = v
+                        break
+
+            source_name = source.split("/")[-1].replace(".md", "")
+            intro = desc if desc else "（暂无简介）"
+
+            page_content = (
+                f"---\n"
+                f'title: "{ref_name}"\n'
+                f"tags: [concept]\n"
+                f"created: {today}\n"
+                f"status: seedling\n"
+                f"---\n\n"
+                f"# {ref_name}\n\n"
+                f"{intro}\n\n"
+                f"---\n\n"
+                f"*首次出现于 [[{source_name}]]*\n"
+            )
+            filepath.write_text(page_content, encoding="utf-8")
 
     def get_skill_prompts(self) -> dict[str, str]:
         """获取所有 skill 的 prompt（skill.md 内容），供 Agent 使用。"""
