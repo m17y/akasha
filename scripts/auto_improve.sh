@@ -93,9 +93,17 @@ run_one_round() {
     # 创建 dev 分支
     git checkout -B dev origin/main 2>/dev/null || git checkout -B dev main 2>/dev/null || true
 
-    # 调用 OpenCode Agent
+    # 调用 OpenCode Agent（macOS 没有 timeout，用兼容写法）
     log "调用 OpenCode Agent..."
-    timeout 600 opencode -p "/improve" --yes 2>&1 | tee -a "$LOG_FILE" || {
+    if command -v timeout &>/dev/null; then
+        timeout 600 opencode -p "/improve" --yes 2>&1 | tee -a "$LOG_FILE"
+    elif command -v gtimeout &>/dev/null; then
+        gtimeout 600 opencode -p "/improve" --yes 2>&1 | tee -a "$LOG_FILE"
+    else
+        opencode -p "/improve" --yes 2>&1 | tee -a "$LOG_FILE"
+    fi
+    local opencode_exit=$?
+    [ $opencode_exit -ne 0 ] && {
         log "OpenCode 执行失败或超时"
         git checkout main 2>/dev/null || true
         return 1
