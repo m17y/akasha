@@ -262,6 +262,24 @@ def main():
         site_main()
         return
 
+    if cmd == "refresh":
+        import asyncio
+
+        vault.init()
+        vault.ensure_indexed()
+        sub = sys.argv[2] if len(sys.argv) > 2 else ""
+        if sub == "concepts":
+            result = asyncio.run(vault.refresh_concepts())
+            print(result)
+        elif sub == "index":
+            stats = vault.refresh_index(force=True)
+            print(stats.summary())
+        else:
+            print("用法:")
+            print("  akasha refresh concepts   重新生成所有概念页面")
+            print("  akasha refresh index      强制刷新索引")
+        return
+
     if cmd == "export":
         _export_vault(vault)
         return
@@ -460,6 +478,8 @@ def _print_help():
     print("  akasha site serve      知识库网站预览")
     print("  akasha site build      构建静态站点")
     print("  akasha site deploy     发布到 GitHub Pages")
+    print("  akasha refresh concepts 重新生成所有概念页面")
+    print("  akasha refresh index   强制刷新索引")
     print("  akasha export          一键打包知识库为 tar.gz")
     print("  akasha import <file>   从 tar.gz 导入知识库")
     print()
