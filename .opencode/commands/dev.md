@@ -65,3 +65,4 @@ uv run pytest tests/ -x -q
 - **不要提交 git**（auto_improve.sh 或用户手动提交）
 - 改动要最小化，不要顺手重构不相关的代码
 - 每次改动不超过 5 个文件
+- **全程用中文输出**，git commit message 也用中文

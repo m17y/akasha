@@ -66,5 +66,6 @@ uv run pytest tests/ -v --tb=short
 - 测试文件命名：`tests/test_模块名.py`
 - 用 pytest + AsyncMock（不要用 unittest）
 - 关注 async/await 一致性（之前踩过坑）
+- **全程用中文输出**，测试报告用中文
 
 $ARGUMENTS
