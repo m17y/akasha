@@ -346,22 +346,39 @@ class Vault:
                 seen.add(safe_name)
                 unique.append((ref_name, safe_name, source))
 
-        # 批量请求 LLM（一次调用生成所有概念的简介）
+        # 批量请求 LLM（一次调用生成简介 + 分类 + 类型）
         concept_names = [name for name, _, _ in unique]
-        descriptions = {}
+        # descriptions: name → {desc, category, type}
+        descriptions: dict[str, dict] = {}
 
         if llm and len(concept_names) <= 20:
             try:
                 prompt = (
-                    "为以下概念各写一段简介（2-3 句话），用中文。\n"
-                    "如果是技术概念，说明它是什么、解决什么问题。\n"
-                    "如果是人物/公司，说明身份和主要贡献。\n"
-                    "格式：每个概念用 `## 概念名` 开头，后面跟简介。\n\n"
+                    "为以下概念各写一段简介（2-3 句话），并判断分类和类型。用中文。\n\n"
+                    "格式要求（严格遵守）：\n"
+                    "```\n"
+                    "## 概念名\n"
+                    "type: concept 或 entity\n"
+                    "category: 见下方分类列表\n"
+                    "简介内容（2-3 句话）\n"
+                    "```\n\n"
+                    "type 判断规则：\n"
+                    "- concept = 技术概念、方法论、设计模式、架构模式、协议\n"
+                    "- entity = 人物、公司、产品、工具、框架、开源项目\n\n"
+                    "category 分类列表：\n"
+                    "- 技术概念（如 RAG、Embedding、Tool Use）\n"
+                    "- 方法论（如 Prompt Engineering、TDD）\n"
+                    "- 架构模式（如 Agent Loop、MCP）\n"
+                    "- 人物（如 Harrison Chase）\n"
+                    "- 公司（如 Anthropic、OpenAI）\n"
+                    "- 产品（如 Claude、GPT-4）\n"
+                    "- 框架（如 LangChain、CrewAI）\n"
+                    "- 工具（如 Whisper、ChromaDB）\n\n"
                     "概念列表：\n" + "\n".join(f"- {name}" for name in concept_names)
                 )
 
                 result = await llm.chat(
-                    system="你是一个百科知识助手，简洁准确地解释概念。",
+                    system="你是一个百科知识助手，简洁准确地解释概念并分类。",
                     user=prompt,
                     max_tokens=4096,
                     temperature=0.3,
@@ -371,56 +388,71 @@ class Vault:
                 import re as _re
 
                 current_name = None
-                current_lines = []
+                current_info: dict = {}
+                current_lines: list = []
                 for line in result.split("\n"):
                     m = _re.match(r"^##\s+(.+)", line)
                     if m:
-                        if current_name and current_lines:
-                            descriptions[current_name.lower()] = "\n".join(
-                                current_lines
-                            ).strip()
+                        if current_name:
+                            current_info["desc"] = "\n".join(current_lines).strip()
+                            descriptions[current_name.lower()] = current_info
                         current_name = m.group(1).strip()
+                        current_info = {"type": "concept", "category": "技术概念"}
                         current_lines = []
                     elif current_name:
-                        current_lines.append(line)
-                if current_name and current_lines:
-                    descriptions[current_name.lower()] = "\n".join(
-                        current_lines
-                    ).strip()
+                        stripped = line.strip()
+                        if stripped.startswith("type:"):
+                            t = stripped[5:].strip().lower()
+                            if t in ("entity", "concept"):
+                                current_info["type"] = t
+                        elif stripped.startswith("category:"):
+                            current_info["category"] = stripped[9:].strip()
+                        else:
+                            current_lines.append(line)
+                if current_name:
+                    current_info["desc"] = "\n".join(current_lines).strip()
+                    descriptions[current_name.lower()] = current_info
 
             except Exception as e:
                 print(f"[vault] 概念简介生成失败: {e}")
 
-        # 写入概念页面
+        # 写入页面
         for ref_name, safe_name, source in unique:
-            filepath = docs_dir / f"wiki/concepts/{safe_name}.md"
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            if filepath.exists():
-                continue
-
-            # 查找 LLM 生成的简介
-            desc = descriptions.get(ref_name.lower(), "")
-            if not desc:
+            # 查找 LLM 返回的信息
+            info = descriptions.get(ref_name.lower())
+            if not info:
                 # 模糊匹配
                 for k, v in descriptions.items():
                     if (
                         safe_name.replace("-", "")
                         in k.replace(" ", "").replace("-", "").lower()
                     ):
-                        desc = v
+                        info = v
                         break
 
+            page_type = info.get("type", "concept") if info else "concept"
+            category = info.get("category", "技术概念") if info else "技术概念"
+            intro = info.get("desc", "（暂无简介）") if info else "（暂无简介）"
+
+            # 根据 type 放到 concepts/ 或 entities/
+            dir_name = "entities" if page_type == "entity" else "concepts"
+            filepath = docs_dir / f"wiki/{dir_name}/{safe_name}.md"
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            if filepath.exists():
+                continue
+
             source_name = source.split("/")[-1].replace(".md", "")
-            intro = desc if desc else "（暂无简介）"
+            tag_type = "entity" if page_type == "entity" else "concept"
 
             page_content = (
                 f"---\n"
                 f'title: "{ref_name}"\n'
-                f"tags: [concept]\n"
+                f"tags: [{tag_type}, {category}]\n"
                 f"created: {today}\n"
                 f"status: seedling\n"
                 f"---\n\n"
                 f"# {ref_name}\n\n"
+                f"> {category}\n\n"
                 f"{intro}\n\n"
                 f"## 相关文章\n\n"
                 f"- [[{source_name}]]\n"
