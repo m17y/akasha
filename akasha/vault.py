@@ -368,23 +368,6 @@ class Vault:
                             )
                             break  # 每篇文章只取一段
 
-        # 批量请求 LLM（一次调用生成简介 + 分类 + 类型）
-        concept_names = [name for name, _, _ in unique]
-        descriptions: dict[str, dict] = {}
-
-        if llm and len(concept_names) <= 20:
-            try:
-                # 构建带上下文的概念列表
-                concept_list_parts = []
-                for name in concept_names:
-                    ctx = concept_contexts.get(name, [])
-                    if ctx:
-                        # 最多取 2 段上下文，每段截断
-                        ctx_text = "\n  ".join(c[:200] for c in ctx[:2])
-                        concept_list_parts.append(f"- {name}\n  上下文：{ctx_text}")
-                    else:
-                        concept_list_parts.append(f"- {name}")
-
         # 逐个生成概念页面（每个独立调 LLM，内容更丰富）
         created_count = 0
         for ref_name, safe_name, source in unique:
@@ -408,11 +391,11 @@ class Vault:
 
             if llm:
                 try:
-                    gen_prompt = (
-                        f"为「{ref_name}」生成一个知识库概念页面。用中文。\n\n"
-                    )
+                    gen_prompt = f"为「{ref_name}」生成一个知识库概念页面。用中文。\n\n"
                     if ctx_text:
-                        gen_prompt += f"以下是知识库文章中提到它的上下文：\n{ctx_text}\n\n"
+                        gen_prompt += (
+                            f"以下是知识库文章中提到它的上下文：\n{ctx_text}\n\n"
+                        )
                     gen_prompt += (
                         "请按以下格式输出（严格遵守）：\n\n"
                         "第一行必须是：type: concept 或 entity\n"
