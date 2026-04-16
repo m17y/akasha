@@ -80,3 +80,13 @@ This is a well-structured Python project. Let me now look at specific areas that
 [0m
 I'd be happy to help improve the codebase! Let me first explore the project to understand what we're working with.
 [0m• [0mExplore codebase structure[90m Explore Agent[0m
+[2026-04-16 14:31:34] 语法检查...
+[2026-04-16 14:31:35] 冒烟测试...
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_smoke.py::TestImports::test_import_config
+  /Users/syf/work/git-hub/akasha/.venv/lib/python3.14/site-packages/chromadb/telemetry/opentelemetry/__init__.py:128: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(f):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+19 passed, 1 warning in 0.81s
