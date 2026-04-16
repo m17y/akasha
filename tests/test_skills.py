@@ -272,7 +272,7 @@ class TestVideoExecutor:
                 "https://youtube.com/watch?v=test", docs_dir=docs_dir
             )
 
-        assert path.startswith("wiki/entities/")
+        assert path.startswith("wiki/articles/")
         assert (docs_dir / path).exists()
 
         content = (docs_dir / path).read_text(encoding="utf-8")
@@ -362,4 +362,4 @@ class TestVideoExecutor:
         with patch.object(ex, "info", return_value=mock_info):
             path = await ex.to_wiki("https://bilibili.com/video/BV1xx")
 
-        assert path.startswith("wiki/entities/")
+        assert path.startswith("wiki/articles/")

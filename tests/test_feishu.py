@@ -50,24 +50,23 @@ def handlers(vault: Vault) -> FeishuHandlers:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestDispatch:
-    async def test_help(self, handlers: FeishuHandlers):
-        result = await handlers.dispatch("/help")
+    def test_help(self, handlers: FeishuHandlers):
+        result = handlers.dispatch("/help")
         assert "Akasha" in result
         assert "/search" in result
 
-    async def test_unknown_command(self, handlers: FeishuHandlers):
-        result = await handlers.dispatch("/unknown")
+    def test_unknown_command(self, handlers: FeishuHandlers):
+        result = handlers.dispatch("/unknown")
         assert "未知命令" in result
 
-    async def test_plain_text_as_search(self, handlers: FeishuHandlers):
+    def test_plain_text_as_search(self, handlers: FeishuHandlers):
         """非命令文本当作搜索处理。"""
-        result = await handlers.dispatch("Agent Loop")
+        result = handlers.dispatch("Agent Loop")
         assert isinstance(result, str)
 
-    async def test_short_text_shows_help(self, handlers: FeishuHandlers):
-        result = await handlers.dispatch("hi")
+    def test_short_text_shows_help(self, handlers: FeishuHandlers):
+        result = handlers.dispatch("hi")
         assert "/search" in result
 
 
@@ -76,18 +75,17 @@ class TestDispatch:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestSearch:
-    async def test_search_empty_query(self, handlers: FeishuHandlers):
-        result = await handlers.search("")
+    def test_search_empty_query(self, handlers: FeishuHandlers):
+        result = handlers.search("")
         assert "用法" in result
 
-    async def test_search_with_results(self, handlers: FeishuHandlers):
-        result = await handlers.search("test note")
+    def test_search_with_results(self, handlers: FeishuHandlers):
+        result = handlers.search("test note")
         assert "找到" in result or "没有找到" in result
 
-    async def test_search_no_results(self, handlers: FeishuHandlers):
-        result = await handlers.search("xyznonexistent12345")
+    def test_search_no_results(self, handlers: FeishuHandlers):
+        result = handlers.search("xyznonexistent12345")
         assert isinstance(result, str)
 
 
@@ -96,11 +94,10 @@ class TestSearch:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestStatus:
-    async def test_status(self, handlers: FeishuHandlers):
-        result = await handlers.status()
-        assert "vault" in result
+    def test_status(self, handlers: FeishuHandlers):
+        result = handlers.status()
+        assert "Akasha" in result
         assert "已索引" in result
 
 
@@ -109,30 +106,29 @@ class TestStatus:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestClip:
-    async def test_clip_empty_url(self, handlers: FeishuHandlers):
-        result = await handlers.clip("")
+    def test_clip_empty_url(self, handlers: FeishuHandlers):
+        result = handlers.clip("")
         assert "用法" in result
 
-    async def test_clip_success(self, handlers: FeishuHandlers):
+    def test_clip_success(self, handlers: FeishuHandlers):
         with patch.object(
             handlers.vault,
             "execute_skill",
             new_callable=AsyncMock,
         ) as mock:
             mock.return_value = "wiki/articles/test.md"
-            result = await handlers.clip("https://example.com")
+            result = handlers.clip("https://example.com")
         assert "已保存" in result
 
-    async def test_clip_failure(self, handlers: FeishuHandlers):
+    def test_clip_failure(self, handlers: FeishuHandlers):
         with patch.object(
             handlers.vault,
             "execute_skill",
             new_callable=AsyncMock,
         ) as mock:
             mock.side_effect = Exception("network error")
-            result = await handlers.clip("https://bad.example.com")
+            result = handlers.clip("https://bad.example.com")
         assert "失败" in result
 
 
@@ -141,20 +137,19 @@ class TestClip:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestVideo:
-    async def test_video_empty_url(self, handlers: FeishuHandlers):
-        result = await handlers.video("")
+    def test_video_empty_url(self, handlers: FeishuHandlers):
+        result = handlers.video("")
         assert "用法" in result
 
-    async def test_video_success(self, handlers: FeishuHandlers):
+    def test_video_success(self, handlers: FeishuHandlers):
         with patch.object(
             handlers.vault,
             "execute_skill",
             new_callable=AsyncMock,
         ) as mock:
             mock.return_value = "wiki/entities/test-video.md"
-            result = await handlers.video("https://www.douyin.com/video/123")
+            result = handlers.video("https://www.douyin.com/video/123")
         assert "已生成" in result
 
 
@@ -163,14 +158,13 @@ class TestVideo:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestIngest:
-    async def test_ingest_empty_path(self, handlers: FeishuHandlers):
-        result = await handlers.ingest("")
+    def test_ingest_empty_path(self, handlers: FeishuHandlers):
+        result = handlers.ingest("")
         assert "用法" in result
 
-    async def test_ingest_no_llm(self, handlers: FeishuHandlers):
-        result = await handlers.ingest("raw/notes/test.md")
+    def test_ingest_no_llm(self, handlers: FeishuHandlers):
+        result = handlers.ingest("raw/notes/test.md")
         assert "未配置" in result
 
 
@@ -179,8 +173,7 @@ class TestIngest:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio(loop_scope="function")
 class TestLint:
-    async def test_lint_empty_wiki(self, handlers: FeishuHandlers):
-        result = await handlers.lint()
+    def test_lint_empty_wiki(self, handlers: FeishuHandlers):
+        result = handlers.lint()
         assert "通过" in result or "问题" in result

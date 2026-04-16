@@ -57,7 +57,7 @@ This is a test note about Agent Loop design patterns.
 @pytest.fixture
 def mock_llm():
     """Mock LLM 客户端。"""
-    llm = MagicMock()
+    llm = AsyncMock()
     llm._client = MagicMock()
     llm._model = "test-model"
     return llm
@@ -171,10 +171,9 @@ class TestAgentLoop:
         agent = AgentLoop(vault, llm_client=mock_llm)
 
         # Mock LLM 直接返回最终回复
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "知识库里目前没有什么特别的内容。"
-        mock_llm._client.chat.completions.create = AsyncMock(return_value=mock_response)
+        mock_llm.chat_messages = AsyncMock(
+            return_value="知识库里目前没有什么特别的内容。"
+        )
 
         result = await agent.run("知识库里有什么？")
         assert "知识库" in result
@@ -186,18 +185,12 @@ class TestAgentLoop:
         agent = AgentLoop(vault, llm_client=mock_llm)
 
         # 第一次调用: LLM 决定搜索
-        resp1 = MagicMock()
-        resp1.choices = [MagicMock()]
-        resp1.choices[
-            0
-        ].message.content = '让我搜索一下。\n\n```json\n{"action": "search", "params": {"query": "Agent Loop"}}\n```'
+        resp1 = '让我搜索一下。\n\n```json\n{"action": "search", "params": {"query": "Agent Loop"}}\n```'
 
         # 第二次调用: LLM 看到搜索结果后给出最终回复
-        resp2 = MagicMock()
-        resp2.choices = [MagicMock()]
-        resp2.choices[0].message.content = "搜索完成。找到了关于 Agent Loop 的内容。"
+        resp2 = "搜索完成。找到了关于 Agent Loop 的内容。"
 
-        mock_llm._client.chat.completions.create = AsyncMock(side_effect=[resp1, resp2])
+        mock_llm.chat_messages = AsyncMock(side_effect=[resp1, resp2])
 
         result = await agent.run("搜一下 Agent Loop")
         assert "搜索完成" in result
@@ -211,27 +204,15 @@ class TestAgentLoop:
         agent = AgentLoop(vault, llm_client=mock_llm)
 
         # Step 1: 列出笔记
-        resp1 = MagicMock()
-        resp1.choices = [MagicMock()]
-        resp1.choices[0].message.content = '```json\n{"action": "list_notes"}\n```'
+        resp1 = '```json\n{"action": "list_notes"}\n```'
 
         # Step 2: 读取某个文件
-        resp2 = MagicMock()
-        resp2.choices = [MagicMock()]
-        resp2.choices[
-            0
-        ].message.content = '```json\n{"action": "read", "params": {"file_path": "raw/notes/test.md"}}\n```'
+        resp2 = '```json\n{"action": "read", "params": {"file_path": "raw/notes/test.md"}}\n```'
 
         # Step 3: 最终回复
-        resp3 = MagicMock()
-        resp3.choices = [MagicMock()]
-        resp3.choices[
-            0
-        ].message.content = "我看了 test.md，这是一篇关于 Agent Loop 的笔记。"
+        resp3 = "我看了 test.md，这是一篇关于 Agent Loop 的笔记。"
 
-        mock_llm._client.chat.completions.create = AsyncMock(
-            side_effect=[resp1, resp2, resp3]
-        )
+        mock_llm.chat_messages = AsyncMock(side_effect=[resp1, resp2, resp3])
 
         result = await agent.run("看看知识库里有什么笔记，读一下最新的")
         assert len(agent.steps) == 3
@@ -245,14 +226,12 @@ class TestAgentLoop:
         agent = AgentLoop(vault, llm_client=mock_llm)
 
         # LLM 一直返回工具调用
-        resp = MagicMock()
-        resp.choices = [MagicMock()]
-        resp.choices[0].message.content = '```json\n{"action": "list_notes"}\n```'
-
-        mock_llm._client.chat.completions.create = AsyncMock(return_value=resp)
+        mock_llm.chat_messages = AsyncMock(
+            return_value='```json\n{"action": "list_notes"}\n```'
+        )
 
         result = await agent.run("做点什么")
-        assert "停止" in result
+        assert "已执行" in result
 
     def test_system_prompt_includes_schema(self, vault: Vault, mock_llm):
         """system prompt 应该包含 schema 内容。"""

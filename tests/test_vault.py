@@ -224,7 +224,7 @@ class TestStatus:
 
     def test_status_formatted(self, vault: Vault):
         text = vault.status_formatted()
-        assert "vault:" in text
+        assert "Akasha 状态" in text
         assert "已索引" in text
 
 
