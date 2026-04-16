@@ -346,21 +346,54 @@ class Vault:
                 seen.add(safe_name)
                 unique.append((ref_name, safe_name, source))
 
+        # 从知识库文章中收集每个概念的上下文片段
+        import re as _re2
+
+        concept_contexts: dict[str, list[str]] = {}
+        articles_dir = docs_dir / "wiki" / "articles"
+        if articles_dir.exists():
+            for md in articles_dir.rglob("*.md"):
+                text = md.read_text(encoding="utf-8")
+                lines = text.split("\n")
+                for ref_name, _, _ in unique:
+                    pattern = f"[[{ref_name}]]"
+                    for i, line in enumerate(lines):
+                        if pattern in line:
+                            # 取前后各 2 行作为上下文
+                            start = max(0, i - 2)
+                            end = min(len(lines), i + 3)
+                            snippet = "\n".join(lines[start:end]).strip()
+                            concept_contexts.setdefault(ref_name, []).append(
+                                f"（来自 {md.stem}）{snippet}"
+                            )
+                            break  # 每篇文章只取一段
+
         # 批量请求 LLM（一次调用生成简介 + 分类 + 类型）
         concept_names = [name for name, _, _ in unique]
-        # descriptions: name → {desc, category, type}
         descriptions: dict[str, dict] = {}
 
         if llm and len(concept_names) <= 20:
             try:
+                # 构建带上下文的概念列表
+                concept_list_parts = []
+                for name in concept_names:
+                    ctx = concept_contexts.get(name, [])
+                    if ctx:
+                        # 最多取 2 段上下文，每段截断
+                        ctx_text = "\n  ".join(c[:200] for c in ctx[:2])
+                        concept_list_parts.append(f"- {name}\n  上下文：{ctx_text}")
+                    else:
+                        concept_list_parts.append(f"- {name}")
+
                 prompt = (
-                    "为以下概念各写一段简介（2-3 句话），并判断分类和类型。用中文。\n\n"
+                    "根据以下概念及其在知识库文章中的上下文，为每个概念写简介（2-3 句话），"
+                    "并判断分类和类型。用中文。\n\n"
                     "格式要求（严格遵守）：\n"
                     "```\n"
                     "## 概念名\n"
                     "type: concept 或 entity\n"
                     "category: 见下方分类列表\n"
-                    "简介内容（2-3 句话）\n"
+                    "简介内容（2-3 句话，基于上下文写，要有具体含义）\n"
                     "```\n\n"
                     "type 判断规则：\n"
                     "- concept = 技术概念、方法论、设计模式、架构模式、协议\n"
@@ -374,7 +407,7 @@ class Vault:
                     "- 产品（如 Claude、GPT-4）\n"
                     "- 框架（如 LangChain、CrewAI）\n"
                     "- 工具（如 Whisper、ChromaDB）\n\n"
-                    "概念列表：\n" + "\n".join(f"- {name}" for name in concept_names)
+                    "概念列表：\n" + "\n".join(concept_list_parts)
                 )
 
                 result = await llm.chat(
