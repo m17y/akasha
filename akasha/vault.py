@@ -262,13 +262,13 @@ class Vault:
 
         # post_save hooks（新增或修改都触发）
         if changed_pages:
-            self._on_pages_created(changed_pages, tool_name)
+            await self._on_pages_created(changed_pages, tool_name)
 
         if isinstance(result, str):
             return result
         return str(result)
 
-    def _on_pages_created(self, new_pages: set[str], tool_name: str) -> None:
+    async def _on_pages_created(self, new_pages: set[str], tool_name: str) -> None:
         """新页面创建后的统一 hook。"""
         from datetime import date
 
@@ -316,12 +316,12 @@ class Vault:
 
         # 批量让 LLM 生成概念简介
         if new_concepts:
-            self._create_concept_pages(docs_dir, new_concepts, today)
+            await self._create_concept_pages(docs_dir, new_concepts, today)
 
         # Hook 3: 刷新索引
         self.index.refresh()
 
-    def _create_concept_pages(
+    async def _create_concept_pages(
         self, docs_dir, concepts: list[tuple[str, str, str]], today: str
     ) -> None:
         """批量创建概念页面，用 LLM 生成简介。"""
@@ -343,8 +343,6 @@ class Vault:
 
         if llm and len(concept_names) <= 20:
             try:
-                import asyncio
-
                 prompt = (
                     "为以下概念各写一段简介（2-3 句话），用中文。\n"
                     "如果是技术概念，说明它是什么、解决什么问题。\n"
@@ -353,13 +351,11 @@ class Vault:
                     "概念列表：\n" + "\n".join(f"- {name}" for name in concept_names)
                 )
 
-                result = asyncio.run(
-                    llm.chat(
-                        system="你是一个百科知识助手，简洁准确地解释概念。",
-                        user=prompt,
-                        max_tokens=4096,
-                        temperature=0.3,
-                    )
+                result = await llm.chat(
+                    system="你是一个百科知识助手，简洁准确地解释概念。",
+                    user=prompt,
+                    max_tokens=4096,
+                    temperature=0.3,
                 )
 
                 # 解析 LLM 输出
@@ -422,7 +418,7 @@ class Vault:
             )
             filepath.write_text(page_content, encoding="utf-8")
 
-    def refresh_concepts(self) -> str:
+    async def refresh_concepts(self) -> str:
         """重新生成所有概念页面的简介。"""
         from datetime import date
 
@@ -459,7 +455,7 @@ class Vault:
 
         # 用 _create_concept_pages 重新生成
         concept_tuples = [(name, stem, "") for name, stem, _ in concepts]
-        self._create_concept_pages(docs_dir, concept_tuples, today)
+        await self._create_concept_pages(docs_dir, concept_tuples, today)
 
         self.index.refresh()
         return f"已重新生成 {len(concepts)} 个概念页面"

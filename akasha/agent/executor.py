@@ -128,4 +128,4 @@ class Executor:
         return self.vault.delete_page(file_path)
 
     async def _refresh_concepts(self) -> str:
-        return self.vault.refresh_concepts()
+        return await self.vault.refresh_concepts()
