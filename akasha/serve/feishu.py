@@ -320,17 +320,88 @@ def _handle_message(
     # 先加表情表示收到了
     _add_reaction(message_id, "OnIt")
 
-    # 路由到 handler
-    handlers = _get_handlers()
-    try:
-        reply = handlers.dispatch(text, user_id=user_id)
-    except Exception as e:
-        reply = f"处理失败: {e}"
+    # 文件消息处理
+    if text.startswith("[file:"):
+        reply = _handle_file_message(text, message_id, user_id)
+    else:
+        # 路由到 handler
+        handlers = _get_handlers()
+        try:
+            reply = handlers.dispatch(text, user_id=user_id)
+        except Exception as e:
+            reply = f"处理失败: {e}"
 
     # 回复
     if reply and message_id:
         _send_reply(message_id, reply)
         print(f"[feishu] 已回复: msg_id={message_id} len={len(reply)}", flush=True)
+
+
+def _handle_file_message(text: str, message_id: str, user_id: str) -> str:
+    """处理文件消息：下载文件 → 根据类型处理。"""
+    import re
+    import tempfile
+
+    m = re.match(r"\[file:(.+?):(.+?)\]", text)
+    if not m:
+        return "无法解析文件信息"
+
+    file_name = m.group(1)
+    file_key = m.group(2)
+
+    # 只支持 PDF
+    if not file_name.lower().endswith(".pdf"):
+        return f"暂不支持 {file_name.split('.')[-1]} 格式，目前只支持 PDF"
+
+    try:
+        # 下载文件
+        client = _get_lark_client()
+        from lark_oapi.api.im.v1 import GetMessageResourceRequest
+
+        req = (
+            GetMessageResourceRequest.builder()
+            .message_id(message_id)
+            .file_key(file_key)
+            .type("file")
+            .build()
+        )
+        resp = client.im.v1.message_resource.get(req)
+
+        if not resp.success():
+            return f"下载文件失败: {resp.msg}"
+
+        # 保存到临时文件
+        tmp_dir = tempfile.mkdtemp()
+        tmp_path = f"{tmp_dir}/{file_name}"
+        with open(tmp_path, "wb") as f:
+            f.write(resp.file.read())
+
+        print(f"[feishu] 已下载文件: {file_name} → {tmp_path}", flush=True)
+
+        # 调用 pdf_to_wiki
+        vault = _get_vault()
+
+        def _run():
+            import asyncio
+
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(
+                    vault.execute_skill("pdf_to_wiki", file_path=tmp_path)
+                )
+            finally:
+                loop.close()
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run)
+            result = future.result(timeout=600)
+
+        return f"已处理 PDF: {result}"
+
+    except Exception as e:
+        return f"PDF 处理失败: {e}"
 
 
 def _on_message_receive(data: P2ImMessageReceiveV1) -> None:
@@ -345,17 +416,33 @@ def _on_message_receive(data: P2ImMessageReceiveV1) -> None:
         print(f"[feishu] 重复消息，跳过: msg_id={message_id}", flush=True)
         return
 
-    # 只处理文本消息
-    if message_type != "text":
+    # 解析消息内容
+    text = ""
+    file_key = ""
+    file_name = ""
+
+    if message_type == "text":
+        try:
+            content = json.loads(message.content or "{}")
+            text = content.get("text", "").strip()
+        except json.JSONDecodeError:
+            text = ""
+    elif message_type == "file":
+        # 文件消息：下载并处理
+        try:
+            content = json.loads(message.content or "{}")
+            file_key = content.get("file_key", "")
+            file_name = content.get("file_name", "")
+        except json.JSONDecodeError:
+            pass
+        if file_key and file_name:
+            text = f"[file:{file_name}:{file_key}]"
+        else:
+            print(f"[feishu] 收到文件消息但缺少 file_key/file_name，跳过", flush=True)
+            return
+    else:
         print(f"[feishu] 收到非文本消息: type={message_type}, 跳过", flush=True)
         return
-
-    # 解析消息内容
-    try:
-        content = json.loads(message.content or "{}")
-        text = content.get("text", "").strip()
-    except json.JSONDecodeError:
-        text = ""
 
     if not text:
         return

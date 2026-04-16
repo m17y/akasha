@@ -16,8 +16,9 @@ from pathlib import Path
 class Memory:
     """Agent 长期记忆管理。"""
 
-    def __init__(self, docs_dir: Path):
-        self._dir = docs_dir / "memory"
+    def __init__(self, vault_path: Path):
+        # 放在 vault 根目录/.memory/，不在 docs/ 里（避免泄漏到站点和索引）
+        self._dir = vault_path / ".memory"
         self._dir.mkdir(parents=True, exist_ok=True)
         (self._dir / "users").mkdir(exist_ok=True)
 
