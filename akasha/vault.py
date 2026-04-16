@@ -281,8 +281,7 @@ class Vault:
             log_entries.append(f"- **{tool_name}** → {page}")
         self.files.append_file("log.md", "\n".join(log_entries) + "\n")
 
-        # Hook 2: 从新文章中提取 concepts（扫描 [[双链]]），LLM 生成简介
-        import asyncio
+        # Hook 2: 从新文章中提取 concepts（扫描 [[双链]]）
         import re
 
         new_concepts: list[
@@ -296,6 +295,7 @@ class Vault:
             if not full_path.exists():
                 continue
             text = full_path.read_text(encoding="utf-8")
+            source_name = page.split("/")[-1].replace(".md", "")
 
             for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
                 ref_name = m.group(1).strip()
@@ -306,15 +306,24 @@ class Vault:
                     continue
 
                 # 检查是否已存在
-                exists = False
+                existing_path = None
                 for category in ("concepts", "entities"):
-                    if (docs_dir / f"wiki/{category}/{safe_name}.md").exists():
-                        exists = True
+                    p = docs_dir / f"wiki/{category}/{safe_name}.md"
+                    if p.exists():
+                        existing_path = p
                         break
-                if not exists:
+
+                if existing_path:
+                    # 已存在 → 追加引用来源（如果还没有）
+                    existing_text = existing_path.read_text(encoding="utf-8")
+                    link = f"[[{source_name}]]"
+                    if link not in existing_text:
+                        existing_text = existing_text.rstrip() + f"\n- {link}\n"
+                        existing_path.write_text(existing_text, encoding="utf-8")
+                else:
                     new_concepts.append((ref_name, safe_name, page))
 
-        # 批量让 LLM 生成概念简介
+        # 批量让 LLM 生成新概念简介
         if new_concepts:
             await self._create_concept_pages(docs_dir, new_concepts, today)
 
@@ -413,8 +422,8 @@ class Vault:
                 f"---\n\n"
                 f"# {ref_name}\n\n"
                 f"{intro}\n\n"
-                f"---\n\n"
-                f"*首次出现于 [[{source_name}]]*\n"
+                f"## 相关文章\n\n"
+                f"- [[{source_name}]]\n"
             )
             filepath.write_text(page_content, encoding="utf-8")
 
