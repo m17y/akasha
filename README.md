@@ -141,13 +141,17 @@ pm2 save && pm2 startup  # 开机自启
 ## 命令
 
 ```
-akasha start           启动 Agent（自动检测并启用已配置的通道）
-akasha init            初始化知识库目录结构
-akasha status          查看配置和索引状态
-akasha mcp             启动 MCP Server (stdio)，供 AI 客户端调用
-akasha site serve      知识库网站预览 http://127.0.0.1:8800
-akasha site build      构建静态站点
-akasha site deploy     发布到 GitHub Pages
+akasha start              启动 Agent（自动检测并启用已配置的通道）
+akasha init               初始化知识库目录结构
+akasha status             查看配置和索引状态
+akasha mcp                启动 MCP Server (stdio)，供 AI 客户端调用
+akasha site serve         知识库网站预览 http://127.0.0.1:8800
+akasha site build         构建静态站点
+akasha site deploy        发布到 GitHub Pages
+akasha refresh concepts   重新生成所有概念页面
+akasha refresh index      强制刷新索引
+akasha export             一键打包知识库
+akasha import <file>      导入知识库
 ```
 
 `akasha start` 会自动检测已配置的通道（飞书等），在后台启用，同时进入交互模式。
@@ -172,9 +176,11 @@ akasha> /help
 
 配置好飞书环境变量后，`akasha start` 自动启用飞书通道。在飞书群聊或私聊中 @Bot：
 
-- 发送视频链接（抖音/B站/YouTube）→ 自动下载、转写、分析，生成知识文档
-- 发送网页链接 → 自动剪藏保存
+- 发送视频链接（抖音/B站/YouTube）→ 自动下载、转写、LLM 深度分析，生成知识文档
+- 发送网页链接 → 自动剪藏，LLM 深度整理（不是原文粘贴），生成结构化文章
 - 发送文字 → Agent 对话
+
+内容保存后自动触发 post_save hook：提取概念/实体 → 创建种子页面 → 更新知识图谱。
 
 也支持命令：
 
@@ -193,6 +199,8 @@ akasha> /help
 ### 知识库网站
 
 `akasha site serve` 启动本地预览，基于知识库内容自动生成 MkDocs Material 站点。
+
+站点内置交互式知识图谱（AntV G6），可视化概念/实体之间的关联关系，支持点击节点在侧边栏查看详情。
 
 ## 配置
 
@@ -252,6 +260,16 @@ export AKASHA_LLM_BASE_URL="http://localhost:11434/v1"
 export AKASHA_LLM_MODEL="qwen2.5"
 ```
 
+### Whisper 配置（语音转写）
+
+默认使用本地 `faster-whisper`，无需额外配置。如需使用云端 API（如 Groq）可配置以下变量：
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `AKASHA_WHISPER_API_KEY` | — (可选) | Whisper API Key，不配则用本地 faster-whisper |
+| `AKASHA_WHISPER_BASE_URL` | — (可选) | Whisper API 端点（如 `https://api.groq.com/openai/v1`） |
+| `AKASHA_WHISPER_MODEL` | `large-v3` | Whisper 模型名 |
+
 ### 飞书通道配置
 
 设置以下环境变量后，`akasha start` 会自动启用飞书通道。
@@ -305,7 +323,11 @@ export AKASHA_LLM_MODEL="qwen2.5"
 │  ├── serve/mcp.py    MCP Server     │
 │  ├── serve/cli.py    终端交互        │
 │  ├── serve/feishu.py 飞书 Bot        │
-│  └── site.py         知识库站点      │
+│  └── site/           知识库站点      │
+│      ├── mkdocs_config.py 配置生成   │
+│      ├── wikilinks.py  双链解析      │
+│      ├── graph.py    知识图谱(AntV G6)│
+│      └── deploy.py   部署 GitHub Pages│
 ├─────────────────────────────────────┤
 │  Agent（大脑）                       │
 │  ├── agent/loop.py   决策循环        │
@@ -315,6 +337,9 @@ export AKASHA_LLM_MODEL="qwen2.5"
 │  Vault（核心，唯一入口）              │
 │  vault.py → search / read / ingest  │
 │             / save_page / lint / ask │
+│  post_save hook → 自动提取概念/实体  │
+│                 → 创建种子页面        │
+│                 → 更新知识图谱        │
 ├─────────────────────────────────────┤
 │  能力层                              │
 │  ├── compiler.py     知识编译        │
@@ -372,10 +397,11 @@ skill.md 同时是 Agent 的能力说明书 — Agent 启动时读取所有 skil
 | LLM | OpenAI + Anthropic 双 Provider（自动重试，120s 超时） |
 | MCP | `mcp` SDK + `FastMCP`（stdio） |
 | 飞书 | `lark-oapi`（WebSocket 长连接） |
-| 站点 | mkdocs-material |
+| 站点 | mkdocs-material + AntV G6 知识图谱 |
 | 视频 | tikwm API + yt-dlp |
 | 剪藏 | 内置 HTML 解析器 |
-| 转写 | ffmpeg + whisper |
+| 转写 | ffmpeg + faster-whisper |
+| 图谱 | AntV G6（交互式可视化，侧边栏联动） |
 
 ## 安全
 
