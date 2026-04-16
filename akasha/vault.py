@@ -58,6 +58,11 @@ class Vault:
         self._compiler = None  # 懒初始化（需要 LLM）
         self._skills_loaded = False
 
+        # 长期记忆
+        from .memory import Memory
+
+        self.memory = Memory(self.config.docs_dir)
+
     # ── 初始化 ──
 
     def init(self) -> None:

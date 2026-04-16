@@ -125,18 +125,19 @@ class AgentLoop:
             Agent 最终回复
         """
         self.steps = []
+
+        # 注入长期记忆到 system prompt
+        system = self._system_prompt
+        if hasattr(self.vault, "memory"):
+            mem_ctx = self.vault.memory.get_context(user_id)
+            if mem_ctx:
+                system += (
+                    f"\n\n# 长期记忆\n\n以下是你记住的信息，可以参考：\n\n{mem_ctx}"
+                )
+
         messages: list[AgentMessage] = [
-            AgentMessage(role="system", content=self._system_prompt),
+            AgentMessage(role="system", content=system),
         ]
-
-        # 注入历史对话上下文
-        if user_id:
-            from .memory import SessionManager
-
-            self._session_mgr = getattr(self, "_session_mgr", None) or SessionManager()
-            history = self._session_mgr.get(user_id).to_messages(limit=6)
-            for msg in history:
-                messages.append(AgentMessage(role=msg["role"], content=msg["content"]))
 
         messages.append(AgentMessage(role="user", content=user_input))
 

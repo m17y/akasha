@@ -58,6 +58,10 @@ class Executor:
                 "handler": self._refresh_concepts,
                 "description": "重新生成所有概念页面的简介",
             },
+            "remember": {
+                "handler": self._remember,
+                "description": "记住一条信息（用户偏好、重要事实等）",
+            },
         }
 
     def get_available_tools(self) -> list[str]:
@@ -129,3 +133,6 @@ class Executor:
 
     async def _refresh_concepts(self) -> str:
         return await self.vault.refresh_concepts()
+
+    async def _remember(self, content: str, user_id: str = "") -> str:
+        return self.vault.memory.remember(content, user_id)
