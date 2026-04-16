@@ -58,12 +58,12 @@ class Memory:
     def set_preference(self, key: str, value: str, user_id: str = "") -> str:
         """设置用户偏好（会覆盖同名偏好）。"""
         filepath = f"users/{user_id}.md" if user_id else "global.md"
-        full_path = self._dir / filepath
+        full_path = self._validate_path(filepath)
 
         if full_path.exists():
             text = full_path.read_text(encoding="utf-8")
         else:
-            text = f"# 记忆\n\n## 偏好\n\n## 记录\n\n"
+            text = "# 记忆\n\n## 偏好\n\n## 记录\n\n"
 
         # 查找并替换已有偏好
         lines = text.split("\n")
@@ -90,9 +90,20 @@ class Memory:
 
     # ── 内部 ──
 
+    def _validate_path(self, rel_path: str) -> Path:
+        """校验路径不逃逸出 .memory/ 目录，返回完整路径。"""
+        full_path = (self._dir / rel_path).resolve()
+        base_resolved = self._dir.resolve()
+        if (
+            not str(full_path).startswith(str(base_resolved) + "/")
+            and full_path != base_resolved
+        ):
+            raise ValueError(f"路径不合法（逃逸出 .memory 目录）: {rel_path}")
+        return full_path
+
     def _read(self, rel_path: str) -> str:
         """读取记忆文件内容。"""
-        full_path = self._dir / rel_path
+        full_path = self._validate_path(rel_path)
         if not full_path.exists():
             return ""
         text = full_path.read_text(encoding="utf-8")
@@ -103,7 +114,7 @@ class Memory:
 
     def _append(self, rel_path: str, content: str) -> None:
         """追加内容到记忆文件。"""
-        full_path = self._dir / rel_path
+        full_path = self._validate_path(rel_path)
         if full_path.exists():
             text = full_path.read_text(encoding="utf-8")
         else:

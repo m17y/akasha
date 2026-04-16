@@ -31,8 +31,6 @@ from dataclasses import dataclass, field
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
-    CreateMessageRequest,
-    CreateMessageRequestBody,
     CreateMessageReactionRequest,
     CreateMessageReactionRequestBody,
     ReplyMessageRequest,
@@ -207,9 +205,10 @@ class FeishuHandlers:
 
 
 # ---------------------------------------------------------------------------
-# 全局状态
+# 全局状态（线程安全：所有惰性初始化都在锁内完成）
 # ---------------------------------------------------------------------------
 
+_init_lock = threading.Lock()
 _feishu_config: FeishuConfig | None = None
 _vault: Vault | None = None
 _handlers: FeishuHandlers | None = None
@@ -218,36 +217,52 @@ _lark_client: lark.Client | None = None
 
 def _get_feishu_config() -> FeishuConfig:
     global _feishu_config
-    if _feishu_config is None:
-        _feishu_config = FeishuConfig()
-    return _feishu_config
+    if _feishu_config is not None:
+        return _feishu_config
+    with _init_lock:
+        if _feishu_config is None:
+            _feishu_config = FeishuConfig()
+        return _feishu_config
 
 
 def _get_vault() -> Vault:
     global _vault
-    if _vault is None:
-        _vault = Vault()
-        _vault.init()
-        _vault.ensure_indexed()
-        _vault.load_skills()
-    return _vault
+    if _vault is not None:
+        return _vault
+    with _init_lock:
+        if _vault is None:
+            v = Vault()
+            v.init()
+            v.ensure_indexed()
+            v.load_skills()
+            _vault = v
+        return _vault
 
 
 def _get_handlers() -> FeishuHandlers:
     global _handlers
-    if _handlers is None:
-        _handlers = FeishuHandlers(_get_vault())
-    return _handlers
+    if _handlers is not None:
+        return _handlers
+    with _init_lock:
+        if _handlers is None:
+            _handlers = FeishuHandlers(_get_vault())
+        return _handlers
 
 
 def _get_lark_client() -> lark.Client:
     global _lark_client
-    if _lark_client is None:
-        cfg = _get_feishu_config()
-        _lark_client = (
-            lark.Client.builder().app_id(cfg.app_id).app_secret(cfg.app_secret).build()
-        )
-    return _lark_client
+    if _lark_client is not None:
+        return _lark_client
+    with _init_lock:
+        if _lark_client is None:
+            cfg = _get_feishu_config()
+            _lark_client = (
+                lark.Client.builder()
+                .app_id(cfg.app_id)
+                .app_secret(cfg.app_secret)
+                .build()
+            )
+        return _lark_client
 
 
 # ---------------------------------------------------------------------------
@@ -323,20 +338,22 @@ def _send_reply_raw(message_id: str, text: str) -> None:
 
 # 已处理的 message_id 缓存（防止飞书重复推送）
 _processed_messages: set[str] = set()
+_processed_messages_lock = threading.Lock()
 _MAX_CACHE_SIZE = 500
 
 
 def _is_duplicate(message_id: str) -> bool:
-    """检查消息是否已处理过。"""
-    if message_id in _processed_messages:
-        return True
-    _processed_messages.add(message_id)
-    # 防止缓存无限增长
-    if len(_processed_messages) > _MAX_CACHE_SIZE:
-        # 清掉一半（set 无序，直接 pop）
-        for _ in range(_MAX_CACHE_SIZE // 2):
-            _processed_messages.pop()
-    return False
+    """检查消息是否已处理过（线程安全）。"""
+    with _processed_messages_lock:
+        if message_id in _processed_messages:
+            return True
+        _processed_messages.add(message_id)
+        # 防止缓存无限增长
+        if len(_processed_messages) > _MAX_CACHE_SIZE:
+            # 清掉一半（set 无序，直接 pop）
+            for _ in range(_MAX_CACHE_SIZE // 2):
+                _processed_messages.pop()
+        return False
 
 
 def _handle_message(
@@ -486,7 +503,7 @@ def _on_message_receive(data: P2ImMessageReceiveV1) -> None:
         if file_key and file_name:
             text = f"[file:{file_name}:{file_key}]"
         else:
-            print(f"[feishu] 收到文件消息但缺少 file_key/file_name，跳过", flush=True)
+            print("[feishu] 收到文件消息但缺少 file_key/file_name，跳过", flush=True)
             return
     else:
         print(f"[feishu] 收到非文本消息: type={message_type}, 跳过", flush=True)

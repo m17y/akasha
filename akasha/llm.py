@@ -12,6 +12,7 @@ L5 韧性:
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 
 from .config import Config
@@ -113,7 +114,6 @@ class AnthropicClient(LLMClient):
     """Anthropic API 客户端（支持 Anthropic 原生 + MiniMax 兼容）。"""
 
     def __init__(self, config: Config):
-        import asyncio
         from anthropic import AsyncAnthropic
 
         self._client = AsyncAnthropic(
@@ -124,10 +124,17 @@ class AnthropicClient(LLMClient):
         )
         self._model = config.llm_model_resolved
         # 限流：同时最多 1 个请求，避免并发触发 MiniMax 529
-        self._semaphore = asyncio.Semaphore(1)
+        # 惰性创建，确保绑定到正确的 event loop
+        self._semaphore: asyncio.Semaphore | None = None
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        """获取绑定到当前 event loop 的信号量（惰性创建）。"""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(1)
+        return self._semaphore
 
     async def chat(self, system, user, temperature=None, max_tokens=4096):
-        async with self._semaphore:
+        async with self._get_semaphore():
             kwargs: dict = {
                 "model": self._model,
                 "system": system,
@@ -142,7 +149,7 @@ class AnthropicClient(LLMClient):
     async def chat_with_context(
         self, system, context, user, temperature=None, max_tokens=4096
     ):
-        async with self._semaphore:
+        async with self._get_semaphore():
             kwargs: dict = {
                 "model": self._model,
                 "system": system,
@@ -162,7 +169,7 @@ class AnthropicClient(LLMClient):
             return self._extract_text(resp)
 
     async def chat_messages(self, messages, max_tokens=4096, temperature=None):
-        async with self._semaphore:
+        async with self._get_semaphore():
             # Anthropic 格式: system 单独提取，messages 只含 user/assistant
             system = ""
             api_messages = []

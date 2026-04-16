@@ -69,4 +69,4 @@ def _deploy(cfg, yml_path: Path):
         cwd=site_dir,
         check=True,
     )
-    print(f">>> 部署完成!")
+    print(">>> 部署完成!")

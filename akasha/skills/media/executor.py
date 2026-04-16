@@ -52,6 +52,12 @@ class MediaExecutor:
             self._client = httpx.AsyncClient(timeout=60, follow_redirects=True)
         return self._client
 
+    async def close(self) -> None:
+        """关闭 HTTP 客户端，释放连接资源。"""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     async def transcribe(self, source: str) -> str:
         """转写音视频，返回文字稿。
 
@@ -212,7 +218,7 @@ class MediaExecutor:
                 text = "".join(seg.text for seg in segments)
                 return text, info.duration
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             text, duration = await loop.run_in_executor(None, _run)
             if text:
                 return TranscribeResult(

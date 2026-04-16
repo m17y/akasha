@@ -29,7 +29,6 @@ def _ensure_g6_js(docs_dir: Path) -> None:
 
 def _generate_graph_page(docs_dir: Path, link_map: dict[str, str]) -> bool:
     """扫描所有 wiki 页面，生成 AntV G6 交互式知识图谱页面。"""
-    import hashlib
     import json
     import re
 

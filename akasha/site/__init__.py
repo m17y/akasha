@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import yaml
 
@@ -56,9 +55,9 @@ def main():
     if replaced:
         print(f"双链:       {replaced} 个 [[wikilink]] 已渲染")
     if graph_generated:
-        print(f"图谱:       wiki/graph.md 已生成")
+        print("图谱:       wiki/graph.md 已生成")
     if resources_generated:
-        print(f"资源:       wiki/resources.md 已生成")
+        print("资源:       wiki/resources.md 已生成")
 
     # mkdocs 使用 _build_docs 目录（双链已替换），如果不存在则用原 docs
     build_docs_dir = cfg.docs_dir.parent / "_build_docs"
@@ -84,7 +83,6 @@ def main():
     if cmd == "deploy":
         _deploy(cfg, yml_path)
     elif cmd == "serve":
-        import signal
         import threading
         import time
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import yaml
 

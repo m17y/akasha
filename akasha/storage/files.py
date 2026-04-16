@@ -92,7 +92,12 @@ class FileStore:
 
         Returns:
             文件完整内容
+
+        Raises:
+            ValueError: 路径不合法
+            FileNotFoundError: 文件不存在
         """
+        self._validate_read_path(file_path)
         full_path = self.config.docs_dir / file_path
         if not full_path.exists():
             raise FileNotFoundError(f"文件不存在: {file_path}")
@@ -121,7 +126,12 @@ class FileStore:
         return full_path
 
     def append_file(self, file_path: str, content: str) -> None:
-        """追加内容到文件（用于 log.md 等）。文件不存在则创建。"""
+        """追加内容到文件（用于 log.md 等）。文件不存在则创建。
+
+        Raises:
+            ValueError: 路径不合法（包含 .. 或逃逸出 docs 目录）
+        """
+        self._validate_read_path(file_path)
         full_path = self.config.docs_dir / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         if full_path.exists():

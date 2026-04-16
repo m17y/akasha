@@ -20,12 +20,12 @@ from akasha.serve.feishu import FeishuHandlers
 
 
 @pytest.fixture
-def vault(tmp_path: Path) -> Vault:
+def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Vault:
     """创建测试 Vault。"""
     vault_path = tmp_path / "vault"
-    os.environ["AKASHA_VAULT_PATH"] = str(vault_path)
-    os.environ["AKASHA_CHROMA_DIR"] = str(tmp_path / "chroma")
-    os.environ.pop("AKASHA_LLM_API_KEY", None)  # 确保 LLM 未配置
+    monkeypatch.setenv("AKASHA_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("AKASHA_CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.delenv("AKASHA_LLM_API_KEY", raising=False)  # 确保 LLM 未配置
 
     v = Vault(vault_path)
     v.init()

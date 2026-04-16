@@ -26,12 +26,12 @@ from akasha.config import Config
 
 
 @pytest.fixture
-def vault(tmp_path: Path) -> Vault:
+def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Vault:
     """创建一个带测试数据的 Vault。"""
     vault_path = tmp_path / "vault"
-    os.environ["AKASHA_VAULT_PATH"] = str(vault_path)
-    os.environ["AKASHA_CHROMA_DIR"] = str(tmp_path / "chroma")
-    os.environ["AKASHA_LLM_API_KEY"] = ""  # 默认无 LLM
+    monkeypatch.setenv("AKASHA_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("AKASHA_CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setenv("AKASHA_LLM_API_KEY", "")  # 默认无 LLM
 
     v = Vault(vault_path)
     v.init()

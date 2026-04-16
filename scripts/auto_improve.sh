@@ -160,7 +160,33 @@ run_one_round() {
         log "uv 不可用，跳过测试"
     fi
 
-    # 提交
+    # 生成中文改进清单
+    log "生成改进清单..."
+    local changelog_file="${SCRIPTS_DIR}/.improve-changelog.md"
+    local changed_files=$(git diff --name-only)
+    local diff_stat=$(git diff --stat)
+    local diff_content=$(git diff | head -200)
+
+    # 追加本轮改进记录
+    {
+        echo ""
+        echo "## $(date '+%Y-%m-%d %H:%M') 改进记录"
+        echo ""
+        echo "### 改动文件"
+        echo ""
+        echo "$changed_files" | while read -r f; do
+            [ -n "$f" ] && echo "- \`$f\`"
+        done
+        echo ""
+        echo "### 改动统计"
+        echo ""
+        echo "\`\`\`"
+        echo "$diff_stat"
+        echo "\`\`\`"
+        echo ""
+    } >> "$changelog_file"
+
+    # 提交（包含改进清单）
     git add .
     local diff_summary=$(git diff --cached --stat | tail -1 | sed 's/^ *//')
     local commit_msg="auto-improve: ${diff_summary}"
@@ -177,24 +203,30 @@ run_one_round() {
         return 1
     }
 
-    # 创建/更新 PR
+    # 创建/更新 PR（用改进清单作为 PR body）
+    local latest_changelog=""
+    if [ -f "$changelog_file" ]; then
+        latest_changelog=$(tail -30 "$changelog_file")
+    fi
+
     if command -v gh &>/dev/null; then
         local pr_num=$(gh pr list --head dev --state open --json number -q '.[0].number' 2>/dev/null || echo "")
         if [ -z "$pr_num" ]; then
             gh pr create \
                 --title "Auto-improve $(date '+%m-%d %H:%M')" \
-                --body "## AI 自动改进
+                --body "$(cat <<EOF
+## AI 自动改进
 
-改动: $total 个文件
+${latest_changelog}
 
-\`\`\`
-$(git diff HEAD~1 --stat)
-\`\`\`
+---
 
 请 review 后合并。如需拒绝，close PR 后执行：
 \`\`\`
-./scripts/auto_improve.sh --reject \"拒绝原因\"
-\`\`\`" \
+./scripts/auto_improve.sh --reject "拒绝原因"
+\`\`\`
+EOF
+)" \
                 --head dev --base main 2>&1 | tee -a "$LOG_FILE" || true
             log "已创建 PR"
         else

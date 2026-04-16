@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import Config, load_config
+from .config import load_config
 from .storage.files import FileStore, ReadResult
 from .storage.index import VectorIndex, SearchResult, IndexStats
 from .skills import SkillRegistry
@@ -352,7 +352,6 @@ class Vault:
                 unique.append((ref_name, safe_name, source))
 
         # 从知识库文章中收集每个概念的上下文片段
-        import re as _re2
 
         concept_contexts: dict[str, list[str]] = {}
         articles_dir = docs_dir / "wiki" / "articles"
@@ -429,7 +428,6 @@ class Vault:
                     )
 
                     # 解析 type 和 category
-                    import re as _re
 
                     lines = result.strip().split("\n")
                     body_start = 0
@@ -661,10 +659,7 @@ class Vault:
         from .compiler import Compiler
 
         # lint 不需要 LLM，创建一个不带 LLM 的 Compiler
-        compiler = Compiler.__new__(Compiler)
-        compiler.config = self.config
-        compiler.files = self.files
-        compiler.llm = None  # type: ignore
+        compiler = Compiler(config=self.config, files=self.files, llm=None)
 
         issues = compiler.lint()
 
@@ -762,7 +757,7 @@ class Vault:
             f"  知识库:    {s['vault_path']}",
             f"  文档目录:  {s['docs_dir']}",
             f"  向量库:    {s['chroma_dir']}",
-            f"  Embedding: ChromaDB 内置 (all-MiniLM-L6-v2, 本地)",
+            "  Embedding: ChromaDB 内置 (all-MiniLM-L6-v2, 本地)",
             f"  已索引:    {s['files_count']} 个文件, {s['chunks_count']} 个 chunks",
         ]
         if s["skills_count"]:
@@ -772,29 +767,29 @@ class Vault:
         lines.append("")
         lines.append("--- LLM ---")
         if s["llm_configured"]:
-            lines.append(f"  状态:      已配置 ✓")
+            lines.append("  状态:      已配置 ✓")
             lines.append(f"  Provider:  {s['llm_provider']}")
             lines.append(f"  模型:      {s['llm_model']}")
             lines.append(f"  端点:      {s['llm_base_url']}")
         else:
-            lines.append(f"  状态:      未配置 ✗")
-            lines.append(f"  影响:      ingest / save / ask 不可用，搜索正常")
-            lines.append(f"  配置方法:")
-            lines.append(f'    export AKASHA_LLM_API_KEY="sk-xxx"')
-            lines.append(f'    export AKASHA_LLM_PROVIDER="openai"  # 或 anthropic')
-            lines.append(f'    export AKASHA_LLM_MODEL="gpt-4o"    # 可选')
+            lines.append("  状态:      未配置 ✗")
+            lines.append("  影响:      ingest / save / ask 不可用，搜索正常")
+            lines.append("  配置方法:")
+            lines.append('    export AKASHA_LLM_API_KEY="sk-xxx"')
+            lines.append('    export AKASHA_LLM_PROVIDER="openai"  # 或 anthropic')
+            lines.append('    export AKASHA_LLM_MODEL="gpt-4o"    # 可选')
 
         # 飞书通道状态
         lines.append("")
         lines.append("--- 飞书通道 ---")
         if s["feishu_configured"]:
-            lines.append(f"  状态:      已配置 ✓")
+            lines.append("  状态:      已配置 ✓")
             lines.append(f"  Bot:       {s['feishu_bot_name']}")
         else:
-            lines.append(f"  状态:      未配置 ✗")
-            lines.append(f"  配置方法:")
-            lines.append(f'    export AKASHA_FEISHU_APP_ID="cli_xxx"')
-            lines.append(f'    export AKASHA_FEISHU_APP_SECRET="xxx"')
+            lines.append("  状态:      未配置 ✗")
+            lines.append("  配置方法:")
+            lines.append('    export AKASHA_FEISHU_APP_ID="cli_xxx"')
+            lines.append('    export AKASHA_FEISHU_APP_SECRET="xxx"')
 
         lines.append("")
         return "\n".join(lines)

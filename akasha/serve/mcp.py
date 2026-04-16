@@ -343,9 +343,9 @@ def _start_agent():
 
             result = asyncio.run(_check())
             print(f"  LLM 响应:   {result.strip()[:50]}")
-            print(f"  状态:       连通 ✓")
+            print("  状态:       连通 ✓")
         except Exception as e:
-            print(f"  状态:       失败 ✗")
+            print("  状态:       失败 ✗")
             print(f"  错误:       {type(e).__name__}: {e}")
         print()
 
@@ -426,7 +426,7 @@ def _export_vault(vault):
     archive_name = f"akasha-export-{ts}.tar.gz"
     archive_path = vault.config.vault_path / archive_name
 
-    print(f">>> 打包知识库...")
+    print(">>> 打包知识库...")
     with tarfile.open(archive_path, "w:gz") as tar:
         # 打包 docs/ (wiki、raw 等所有内容)
         tar.add(docs_dir, arcname="docs")
@@ -455,13 +455,12 @@ def _import_vault(vault, archive: str):
         return
 
     vault.init()
-    docs_dir = vault.config.docs_dir
 
     print(f">>> 导入知识库: {archive_path}")
     with tarfile.open(archive_path, "r:gz") as tar:
-        tar.extractall(path=vault.config.vault_path)
+        tar.extractall(path=vault.config.vault_path, filter="data")
 
-    print(f">>> 导入完成，刷新索引...")
+    print(">>> 导入完成，刷新索引...")
     vault.ensure_indexed()
     vault.index.refresh()
     print(vault.status_formatted())

@@ -131,7 +131,7 @@ SAVE_PAGE_PROMPT = """\
 class Compiler:
     """知识编译器。"""
 
-    def __init__(self, config: Config, files: FileStore, llm: LLMClient):
+    def __init__(self, config: Config, files: FileStore, llm: LLMClient | None = None):
         self.config = config
         self.files = files
         self.llm = llm

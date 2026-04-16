@@ -26,11 +26,11 @@ from akasha.storage.index import VectorIndex
 
 
 @pytest.fixture
-def vault(tmp_path: Path) -> Vault:
+def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Vault:
     """创建一个使用临时目录的 Vault 实例。"""
     vault_path = tmp_path / "vault"
-    os.environ["AKASHA_VAULT_PATH"] = str(vault_path)
-    os.environ["AKASHA_CHROMA_DIR"] = str(tmp_path / "chroma")
+    monkeypatch.setenv("AKASHA_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("AKASHA_CHROMA_DIR", str(tmp_path / "chroma"))
 
     v = Vault(vault_path)
     v.init()
@@ -91,10 +91,10 @@ Think 决定下一步，Act 执行操作，Observe 观察结果。
 
 
 class TestInit:
-    def test_init_creates_dirs(self, tmp_path: Path):
+    def test_init_creates_dirs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         vault_path = tmp_path / "new_vault"
-        os.environ["AKASHA_VAULT_PATH"] = str(vault_path)
-        os.environ["AKASHA_CHROMA_DIR"] = str(tmp_path / "chroma")
+        monkeypatch.setenv("AKASHA_VAULT_PATH", str(vault_path))
+        monkeypatch.setenv("AKASHA_CHROMA_DIR", str(tmp_path / "chroma"))
 
         v = Vault(vault_path)
         v.init()
@@ -106,10 +106,10 @@ class TestInit:
         assert (vault_path / "docs" / "index.md").exists()
         assert (vault_path / "docs" / "log.md").exists()
 
-    def test_init_idempotent(self, tmp_path: Path):
+    def test_init_idempotent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         vault_path = tmp_path / "vault"
-        os.environ["AKASHA_VAULT_PATH"] = str(vault_path)
-        os.environ["AKASHA_CHROMA_DIR"] = str(tmp_path / "chroma")
+        monkeypatch.setenv("AKASHA_VAULT_PATH", str(vault_path))
+        monkeypatch.setenv("AKASHA_CHROMA_DIR", str(tmp_path / "chroma"))
 
         v = Vault(vault_path)
         v.init()

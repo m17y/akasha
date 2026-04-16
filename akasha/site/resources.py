@@ -6,7 +6,6 @@ Resources — 生成资源总览页面。
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 
