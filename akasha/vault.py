@@ -470,7 +470,27 @@ class Vault:
 
             page_type = info.get("type", "concept") if info else "concept"
             category = info.get("category", "技术概念") if info else "技术概念"
-            intro = info.get("desc", "（暂无简介）") if info else "（暂无简介）"
+            intro = info.get("desc", "") if info else ""
+
+            # 匹配不到时，用上下文让 LLM 单独生成
+            if not intro and llm:
+                try:
+                    ctx = concept_contexts.get(ref_name, [])
+                    ctx_text = "\n".join(c[:200] for c in ctx[:2]) if ctx else ""
+                    single_prompt = f"用中文写 2-3 句话简介：{ref_name}"
+                    if ctx_text:
+                        single_prompt += f"\n上下文：{ctx_text}"
+                    intro = await llm.chat(
+                        system="你是百科知识助手，简洁准确。只输出简介，不要标题和格式。",
+                        user=single_prompt,
+                        max_tokens=200,
+                        temperature=0.3,
+                    )
+                    intro = intro.strip()
+                except Exception:
+                    pass
+            if not intro:
+                intro = f"{ref_name} 是一个在知识库文章中被引用的概念。"
 
             # 根据 type 放到 concepts/ 或 entities/
             dir_name = "entities" if page_type == "entity" else "concepts"
