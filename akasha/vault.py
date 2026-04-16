@@ -422,6 +422,48 @@ class Vault:
             )
             filepath.write_text(page_content, encoding="utf-8")
 
+    def refresh_concepts(self) -> str:
+        """重新生成所有概念页面的简介。"""
+        from datetime import date
+
+        docs_dir = self.config.docs_dir
+        concepts_dir = docs_dir / "wiki" / "concepts"
+        if not concepts_dir.exists():
+            return "概念目录不存在"
+
+        today = date.today().isoformat()
+        concept_files = list(concepts_dir.glob("*.md"))
+        if not concept_files:
+            return "没有概念页面"
+
+        # 收集所有概念名
+        concepts = []
+        for f in concept_files:
+            title = f.stem.replace("-", " ").title()
+            # 从 frontmatter 提取真实标题
+            text = f.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                parts = text.split("---", 2)
+                if len(parts) >= 3:
+                    for line in parts[1].split("\n"):
+                        if line.strip().startswith("title:"):
+                            t = line.split(":", 1)[1].strip().strip('"').strip("'")
+                            if t:
+                                title = t
+                            break
+            concepts.append((title, f.stem, f))
+
+        # 删除旧页面
+        for _, _, filepath in concepts:
+            filepath.unlink()
+
+        # 用 _create_concept_pages 重新生成
+        concept_tuples = [(name, stem, "") for name, stem, _ in concepts]
+        self._create_concept_pages(docs_dir, concept_tuples, today)
+
+        self.index.refresh()
+        return f"已重新生成 {len(concepts)} 个概念页面"
+
     def get_skill_prompts(self) -> dict[str, str]:
         """获取所有 skill 的 prompt（skill.md 内容），供 Agent 使用。"""
         if not self._skills_loaded:

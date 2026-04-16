@@ -54,6 +54,10 @@ class Executor:
                 "handler": self._delete_page,
                 "description": "删除 wiki 页面",
             },
+            "refresh_concepts": {
+                "handler": self._refresh_concepts,
+                "description": "重新生成所有概念页面的简介",
+            },
         }
 
     def get_available_tools(self) -> list[str]:
@@ -122,3 +126,6 @@ class Executor:
 
     async def _delete_page(self, file_path: str) -> str:
         return self.vault.delete_page(file_path)
+
+    async def _refresh_concepts(self) -> str:
+        return self.vault.refresh_concepts()
