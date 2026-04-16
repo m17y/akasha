@@ -299,7 +299,7 @@ class Vault:
 
             for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
                 ref_name = m.group(1).strip()
-                if not ref_name:
+                if not ref_name or _is_junk_concept(ref_name):
                     continue
                 safe_name = re.sub(r"[^\w\-]", "-", ref_name.lower())[:60].strip("-")
                 if not safe_name:
@@ -739,3 +739,95 @@ class Vault:
 
         lines.append("")
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 概念过滤
+# ---------------------------------------------------------------------------
+
+# 垃圾概念黑名单（网站导航、平台名、广告等）
+_JUNK_CONCEPTS = {
+    # 平台/网站
+    "百家号",
+    "百度",
+    "百度开放平台",
+    "百度百科",
+    "知乎",
+    "微信",
+    "微博",
+    "今日头条",
+    "抖音",
+    "bilibili",
+    "b站",
+    "youtube",
+    "twitter",
+    "x.com",
+    "github",
+    "gitee",
+    "csdn",
+    "掘金",
+    "简书",
+    "博客园",
+    "cnblogs",
+    "stackoverflow",
+    "medium",
+    "substack",
+    # 网页元素
+    "首页",
+    "登录",
+    "注册",
+    "关于我们",
+    "联系我们",
+    "隐私政策",
+    "用户协议",
+    "评论",
+    "分享",
+    "收藏",
+    "点赞",
+    "关注",
+    "订阅",
+    "更多",
+    "上一篇",
+    "下一篇",
+    "相关推荐",
+    "热门文章",
+    "最新文章",
+    # 太泛的词
+    "技术",
+    "文章",
+    "视频",
+    "链接",
+    "内容",
+    "原文",
+    "来源",
+    "作者",
+}
+
+# 长度太短或太长的不要
+_MIN_CONCEPT_LEN = 2
+_MAX_CONCEPT_LEN = 30
+
+
+def _is_junk_concept(name: str) -> bool:
+    """判断是否是垃圾概念。"""
+    name_lower = name.strip().lower()
+
+    # 黑名单
+    if name_lower in _JUNK_CONCEPTS or name in _JUNK_CONCEPTS:
+        return True
+
+    # 长度
+    if len(name.strip()) < _MIN_CONCEPT_LEN or len(name.strip()) > _MAX_CONCEPT_LEN:
+        return True
+
+    # 纯数字 / 纯符号
+    import re
+
+    if re.match(r"^[\d\s\-_.]+$", name):
+        return True
+
+    # URL
+    if name.startswith("http") or name.startswith("www."):
+        return True
+
+    return False
