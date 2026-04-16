@@ -385,119 +385,92 @@ class Vault:
                     else:
                         concept_list_parts.append(f"- {name}")
 
-                prompt = (
-                    "根据以下概念及其在知识库文章中的上下文，为每个概念写简介（2-3 句话），"
-                    "并判断分类和类型。用中文。\n\n"
-                    "格式要求（严格遵守）：\n"
-                    "```\n"
-                    "## 概念名\n"
-                    "type: concept 或 entity\n"
-                    "category: 见下方分类列表\n"
-                    "简介内容（2-3 句话，基于上下文写，要有具体含义）\n"
-                    "```\n\n"
-                    "type 判断规则：\n"
-                    "- concept = 技术概念、方法论、设计模式、架构模式、协议\n"
-                    "- entity = 人物、公司、产品、工具、框架、开源项目\n\n"
-                    "category 分类列表：\n"
-                    "- 技术概念（如 RAG、Embedding、Tool Use）\n"
-                    "- 方法论（如 Prompt Engineering、TDD）\n"
-                    "- 架构模式（如 Agent Loop、MCP）\n"
-                    "- 人物（如 Harrison Chase）\n"
-                    "- 公司（如 Anthropic、OpenAI）\n"
-                    "- 产品（如 Claude、GPT-4）\n"
-                    "- 框架（如 LangChain、CrewAI）\n"
-                    "- 工具（如 Whisper、ChromaDB）\n\n"
-                    "概念列表：\n" + "\n".join(concept_list_parts)
-                )
+        # 逐个生成概念页面（每个独立调 LLM，内容更丰富）
+        created_count = 0
+        for ref_name, safe_name, source in unique:
+            # 跳过已存在的
+            exists = False
+            for dir_name in ("concepts", "entities"):
+                if (docs_dir / f"wiki/{dir_name}/{safe_name}.md").exists():
+                    exists = True
+                    break
+            if exists:
+                continue
 
-                result = await llm.chat(
-                    system="你是一个百科知识助手，简洁准确地解释概念并分类。",
-                    user=prompt,
-                    max_tokens=4096,
-                    temperature=0.3,
-                )
+            # 收集上下文
+            ctx = concept_contexts.get(ref_name, [])
+            ctx_text = "\n\n".join(c[:300] for c in ctx[:3]) if ctx else ""
 
-                # 解析 LLM 输出
-                import re as _re
+            # LLM 生成完整概念页面
+            page_body = ""
+            page_type = "concept"
+            category = "技术概念"
 
-                current_name = None
-                current_info: dict = {}
-                current_lines: list = []
-                for line in result.split("\n"):
-                    m = _re.match(r"^##\s+(.+)", line)
-                    if m:
-                        if current_name:
-                            current_info["desc"] = "\n".join(current_lines).strip()
-                            descriptions[current_name.lower()] = current_info
-                        current_name = m.group(1).strip()
-                        current_info = {"type": "concept", "category": "技术概念"}
-                        current_lines = []
-                    elif current_name:
+            if llm:
+                try:
+                    gen_prompt = (
+                        f"为「{ref_name}」生成一个知识库概念页面。用中文。\n\n"
+                    )
+                    if ctx_text:
+                        gen_prompt += f"以下是知识库文章中提到它的上下文：\n{ctx_text}\n\n"
+                    gen_prompt += (
+                        "请按以下格式输出（严格遵守）：\n\n"
+                        "第一行必须是：type: concept 或 entity\n"
+                        "第二行必须是：category: 分类名\n"
+                        "（type: concept = 技术概念/方法论/架构模式/协议；"
+                        "entity = 人物/公司/产品/工具/框架）\n"
+                        "（category 可选：技术概念、方法论、架构模式、人物、公司、产品、框架、工具）\n\n"
+                        "然后输出正文，必须包含以下章节：\n"
+                        "## 定义\n"
+                        "（2-3 句话清晰定义这个概念是什么）\n\n"
+                        "## 核心要点\n"
+                        "（3-5 个要点，每个 1-2 句话展开）\n\n"
+                        "## 应用场景\n"
+                        "（在什么场景下会用到，结合上下文）\n\n"
+                        "## 相关概念\n"
+                        "（列出相关的概念，用 [[双链]] 格式，如 [[Agent]]、[[RAG]]）\n\n"
+                        "如果是人物/公司类实体，章节改为：定义、主要贡献、代表作品、相关概念。\n"
+                        "用 [[双链]] 引用其他相关概念。"
+                    )
+
+                    result = await llm.chat(
+                        system="你是一位专业的知识库编辑，擅长撰写准确、结构化的概念词条。",
+                        user=gen_prompt,
+                        max_tokens=2048,
+                        temperature=0.3,
+                    )
+
+                    # 解析 type 和 category
+                    import re as _re
+
+                    lines = result.strip().split("\n")
+                    body_start = 0
+                    for i, line in enumerate(lines):
                         stripped = line.strip()
                         if stripped.startswith("type:"):
                             t = stripped[5:].strip().lower()
                             if t in ("entity", "concept"):
-                                current_info["type"] = t
+                                page_type = t
+                            body_start = i + 1
                         elif stripped.startswith("category:"):
-                            current_info["category"] = stripped[9:].strip()
-                        else:
-                            current_lines.append(line)
-                if current_name:
-                    current_info["desc"] = "\n".join(current_lines).strip()
-                    descriptions[current_name.lower()] = current_info
+                            category = stripped[9:].strip()
+                            body_start = i + 1
+                        elif stripped.startswith("##"):
+                            break
+                    page_body = "\n".join(lines[body_start:]).strip()
 
-            except Exception as e:
-                print(f"[vault] 概念简介生成失败: {e}")
+                except Exception as e:
+                    print(f"[vault] 概念 {ref_name} 生成失败: {e}")
 
-        print(
-            f"[vault] LLM 生成了 {len(descriptions)} 个概念简介，需要 {len(unique)} 个"
-        )
+            if not page_body:
+                page_body = (
+                    f"## 定义\n\n{ref_name} 是一个在知识库文章中被引用的概念。\n"
+                )
 
-        # 写入页面
-        for ref_name, safe_name, source in unique:
-            # 查找 LLM 返回的信息（多种匹配策略）
-            info = descriptions.get(ref_name.lower())
-            if not info:
-                info = descriptions.get(safe_name.replace("-", " "))
-            if not info:
-                # 模糊匹配：概念名包含 safe_name 或 safe_name 包含概念名
-                for k, v in descriptions.items():
-                    k_clean = k.replace(" ", "").replace("-", "").lower()
-                    s_clean = safe_name.replace("-", "").lower()
-                    if s_clean in k_clean or k_clean in s_clean:
-                        info = v
-                        break
-
-            page_type = info.get("type", "concept") if info else "concept"
-            category = info.get("category", "技术概念") if info else "技术概念"
-            intro = info.get("desc", "") if info else ""
-
-            # 匹配不到时，用上下文让 LLM 单独生成
-            if not intro and llm:
-                try:
-                    ctx = concept_contexts.get(ref_name, [])
-                    ctx_text = "\n".join(c[:200] for c in ctx[:2]) if ctx else ""
-                    single_prompt = f"用中文写 2-3 句话简介：{ref_name}"
-                    if ctx_text:
-                        single_prompt += f"\n上下文：{ctx_text}"
-                    intro = await llm.chat(
-                        system="你是百科知识助手，简洁准确。只输出简介，不要标题和格式。",
-                        user=single_prompt,
-                        max_tokens=200,
-                        temperature=0.3,
-                    )
-                    intro = intro.strip()
-                except Exception:
-                    pass
-            if not intro:
-                intro = f"{ref_name} 是一个在知识库文章中被引用的概念。"
-
-            # 根据 type 放到 concepts/ 或 entities/
+            # 写入文件
             dir_name = "entities" if page_type == "entity" else "concepts"
             filepath = docs_dir / f"wiki/{dir_name}/{safe_name}.md"
             filepath.parent.mkdir(parents=True, exist_ok=True)
-            if filepath.exists():
-                continue
 
             source_name = source.split("/")[-1].replace(".md", "")
             tag_type = "entity" if page_type == "entity" else "concept"
@@ -511,11 +484,15 @@ class Vault:
                 f"---\n\n"
                 f"# {ref_name}\n\n"
                 f"> {category}\n\n"
-                f"{intro}\n\n"
+                f"{page_body}\n\n"
                 f"## 相关文章\n\n"
                 f"- [[{source_name}]]\n"
             )
             filepath.write_text(page_content, encoding="utf-8")
+            created_count += 1
+            print(f"[vault] 创建概念: {dir_name}/{safe_name}.md ({category})")
+
+        print(f"[vault] 共创建 {created_count} 个概念/实体页面")
 
     async def refresh_concepts(self) -> str:
         """重新生成所有概念/实体页面：LLM 重写简介 + 分类，保留相关文章引用。"""
