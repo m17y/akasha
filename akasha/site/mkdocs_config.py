@@ -125,6 +125,9 @@ def _build_nav(docs_dir: Path) -> list:
     if raw_section:
         nav.append(raw_section)
 
+    if (docs_dir / "wiki" / "resources.md").exists():
+        nav.append({"资源总览": "wiki/resources.md"})
+
     if (docs_dir / "schema.md").exists():
         nav.append({"Schema": "schema.md"})
 

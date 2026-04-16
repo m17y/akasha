@@ -46,14 +46,19 @@ def main():
         print("  deploy  发布到 GitHub Pages")
         sys.exit(1)
 
-    # 预处理：双链渲染（写到 _build_docs，不修改源文件）+ 生成图谱页面（写到源文件，这是新内容）
+    # 预处理
+    from .resources import generate_resources_page
+
     link_map = _build_wikilink_map(cfg.docs_dir)
     graph_generated = _generate_graph_page(cfg.docs_dir, link_map)
+    resources_generated = generate_resources_page(cfg.docs_dir)
     replaced = _resolve_wikilinks(cfg.docs_dir, link_map)
     if replaced:
         print(f"双链:       {replaced} 个 [[wikilink]] 已渲染")
     if graph_generated:
         print(f"图谱:       wiki/graph.md 已生成")
+    if resources_generated:
+        print(f"资源:       wiki/resources.md 已生成")
 
     # mkdocs 使用 _build_docs 目录（双链已替换），如果不存在则用原 docs
     build_docs_dir = cfg.docs_dir.parent / "_build_docs"
@@ -112,6 +117,7 @@ def main():
                 try:
                     new_link_map = _build_wikilink_map(cfg.docs_dir)
                     _generate_graph_page(cfg.docs_dir, new_link_map)
+                    generate_resources_page(cfg.docs_dir)
                     _resolve_wikilinks(cfg.docs_dir, new_link_map)
                     new_config = _generate_mkdocs_config(cfg)
                     new_config["docs_dir"] = str(actual_docs_dir)
