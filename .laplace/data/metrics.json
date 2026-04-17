@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-17T16:12:51.045769",
+  "code": {
+    "total_files": 43,
+    "total_lines": 9061,
+    "functions": 415,
+    "syntax_errors": 0,
+    "max_lines": 894,
+    "max_file": "akasha/vault.py",
+    "languages": {
+      "python": 43
+    }
+  },
+  "tests": {
+    "passed": 138,
+    "failed": 0,
+    "pass_rate": 100.0
+  },
+  "git": {
+    "commits_30d": 86,
+    "hot_files": [
+      "akasha/vault.py",
+      "akasha/skills/video/executor.py",
+      "scripts/.improve.log",
+      ".opencode/commands/improve.md",
+      "scripts/auto_improve.sh"
+    ]
+  }
+}
