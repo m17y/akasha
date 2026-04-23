@@ -46,10 +46,15 @@ def _resolve_wikilinks(docs_dir: Path, link_map: dict[str, str]) -> int:
 
     # 创建构建用的临时目录（与 docs 平级）
     build_dir = docs_dir.parent / "_build_docs"
-    # 每次全量复制源文件到 build 目录
+    # 每次全量复制源文件到 build 目录（排除大文件目录）
+    _SKIP_DIRS = {"assets", ".memory"}
     if build_dir.exists():
         shutil.rmtree(build_dir)
-    shutil.copytree(docs_dir, build_dir)
+    shutil.copytree(
+        docs_dir,
+        build_dir,
+        ignore=shutil.ignore_patterns(*_SKIP_DIRS),
+    )
 
     build_wiki_dir = build_dir / "wiki"
     for md_file in build_wiki_dir.rglob("*.md"):

@@ -125,8 +125,12 @@ class FileStore:
         full_path.write_text(content, encoding="utf-8")
         return full_path
 
+    _MAX_LOG_SIZE = 100_000  # 日志文件最大字符数（约 100KB）
+
     def append_file(self, file_path: str, content: str) -> None:
         """追加内容到文件（用于 log.md 等）。文件不存在则创建。
+
+        超过 _MAX_LOG_SIZE 时自动截断旧内容，保留后半部分。
 
         Raises:
             ValueError: 路径不合法（包含 .. 或逃逸出 docs 目录）
@@ -136,7 +140,16 @@ class FileStore:
         full_path.parent.mkdir(parents=True, exist_ok=True)
         if full_path.exists():
             existing = full_path.read_text(encoding="utf-8")
-            full_path.write_text(existing + content, encoding="utf-8")
+            combined = existing + content
+            # 超过上限时截断旧内容，保留后半部分
+            if len(combined) > self._MAX_LOG_SIZE:
+                keep = combined[-self._MAX_LOG_SIZE // 2 :]
+                # 从第一个换行处截断，避免断行
+                nl = keep.find("\n")
+                if nl > 0:
+                    keep = keep[nl + 1 :]
+                combined = f"# 操作日志\n\n> 旧日志已自动截断。\n\n{keep}"
+            full_path.write_text(combined, encoding="utf-8")
         else:
             full_path.write_text(
                 f"# 操作日志\n\n> Append-only. 每次操作自动追加。\n{content}",

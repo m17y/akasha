@@ -396,6 +396,7 @@ def _handle_file_message(text: str, message_id: str, user_id: str) -> str:
     if not file_name.lower().endswith(".pdf"):
         return f"暂不支持 {file_name.split('.')[-1]} 格式，目前只支持 PDF"
 
+    tmp_dir = None
     try:
         # 下载文件
         client = _get_lark_client()
@@ -445,6 +446,11 @@ def _handle_file_message(text: str, message_id: str, user_id: str) -> str:
 
     except Exception as e:
         return f"PDF 处理失败: {e}"
+    finally:
+        # 清理临时文件
+        if tmp_dir:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _on_message_receive(data: P2ImMessageReceiveV1) -> None:

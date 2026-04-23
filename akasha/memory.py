@@ -112,8 +112,10 @@ class Memory:
             text = "\n".join(text.split("\n")[1:])
         return text.strip()
 
+    _MAX_RECORDS = 200  # 记录条目上限
+
     def _append(self, rel_path: str, content: str) -> None:
-        """追加内容到记忆文件。"""
+        """追加内容到记忆文件。超过 _MAX_RECORDS 条时自动丢弃最旧的记录。"""
         full_path = self._validate_path(rel_path)
         if full_path.exists():
             text = full_path.read_text(encoding="utf-8")
@@ -125,5 +127,20 @@ class Memory:
             text = text.rstrip() + "\n" + content
         else:
             text += f"\n## 记录\n\n{content}"
+
+        # 限制记录条目数量
+        lines = text.split("\n")
+        record_start = None
+        for i, line in enumerate(lines):
+            if line.strip() == "## 记录":
+                record_start = i
+                break
+        if record_start is not None:
+            header = lines[: record_start + 1]
+            records = [l for l in lines[record_start + 1 :] if l.strip().startswith("- ")]
+            if len(records) > self._MAX_RECORDS:
+                records = records[-self._MAX_RECORDS :]
+            # 保留非记录行（空行等）
+            text = "\n".join(header) + "\n\n" + "\n".join(records) + "\n"
 
         full_path.write_text(text, encoding="utf-8")
