@@ -15,7 +15,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN uv venv /app/.venv && \
     uv pip install --python /app/.venv/bin/python \
-    chromadb pyyaml openai anthropic httpx mkdocs-material lark-oapi uvicorn starlette "mcp>=1.25.0"
+    chromadb pyyaml openai anthropic httpx "mkdocs>=1.6,<2.0" mkdocs-material lark-oapi uvicorn starlette "mcp>=1.25.0"
 
 # 复制项目代码并安装
 COPY . .
